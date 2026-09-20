@@ -104,6 +104,17 @@
     cursor: pointer;
   }
   header.page-head .meta button:hover { background: var(--surface-2); }
+  header.page-head .meta select {
+    margin-right: 10px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 7px;
+    cursor: pointer;
+  }
 
   .grid {
     display: grid;
@@ -227,7 +238,15 @@
 <main>
   <header class="page-head">
     <h1>Fleet Dashboard</h1>
-    <div class="meta"><span id="updated-at">loading&hellip;</span><button id="refresh-btn" type="button">Refresh</button></div>
+    <div class="meta">
+      <select id="lookback-select">
+        <option value="24">last 24h</option>
+        <option value="168" selected>last 7 days</option>
+        <option value="720">last 30 days</option>
+        <option value="87600">all time</option>
+      </select>
+      <span id="updated-at">loading&hellip;</span><button id="refresh-btn" type="button">Refresh</button>
+    </div>
   </header>
 
   <div class="grid">
@@ -322,13 +341,22 @@ function fmtTime(iso) {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function lookbackHours() {
+  return document.getElementById('lookback-select').value;
+}
+
+function lookbackLabel() {
+  const select = document.getElementById('lookback-select');
+  return select.options[select.selectedIndex].textContent;
+}
+
 async function loadFleet() {
   const body = document.getElementById('activity-body');
   const win = document.getElementById('activity-window');
   try {
-    const res = await fetch('/api/fleet');
+    const res = await fetch('/api/fleet?lookback_hours=' + lookbackHours());
     const data = await res.json();
-    win.textContent = '(7d)';
+    win.textContent = `(${lookbackLabel()})`;
     if (!data.activity.length) {
       body.innerHTML = '<tr><td colspan="5" class="empty-state">No activity in this window.</td></tr>';
     } else {
@@ -364,7 +392,7 @@ async function loadModels() {
   const body = document.getElementById('models-body');
   const providersList = document.getElementById('providers-list');
   try {
-    const res = await fetch('/api/models');
+    const res = await fetch('/api/models?lookback_hours=' + lookbackHours());
     const data = await res.json();
 
     if (!data.by_provider.length) {
@@ -520,6 +548,7 @@ function refreshAll() {
 }
 
 document.getElementById('refresh-btn').addEventListener('click', refreshAll);
+document.getElementById('lookback-select').addEventListener('change', refreshAll);
 refreshAll();
 </script>
 </body>

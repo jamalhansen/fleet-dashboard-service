@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+__pycache__
+*.py[codz]
+*$py.class
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+.python-version
+
+# Tests / Coverage
+.pytest_cache/
+.coverage
+.ruff_cache/
+
+# Local data
+*.db
+*.db-journal
+
+# local-first security requirements
+CLAUDE.md
+uv.toml
+.DS_Store
+
+# Workspace standard ignores
+*.pyc
+*.pyd
+*.pyo
+.venv/
+_NOTES.md

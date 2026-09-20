@@ -1,0 +1,125 @@
+"""FastAPI app: a handful of read-only JSON endpoints plus the static
+frontend. No auth -- read-only status data, meant for LAN access only (bind
+to 0.0.0.0, same shape as japanese-tutor); nothing here holds a secret or
+lets a caller change anything."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from . import core
+
+app = FastAPI(title="Fleet Dashboard")
+
+VAULT_PATH = os.environ.get("FLEET_DASHBOARD_VAULT_PATH") or str(Path.home() / "vaults" / "Contexta")
+ART_ITEMS_DIR = os.environ.get("FLEET_DASHBOARD_ART_ITEMS_DIR") or "~/iCloud/ai-artist/items"
+JAPANESE_TUTOR_URL = os.environ.get("JAPANESE_TUTOR_URL") or "http://127.0.0.1:8421"
+
+
+@app.get("/api/fleet")
+def api_fleet(lookback_hours: float = 24 * 7):
+    activity = core.get_fleet_activity(lookback_hours=lookback_hours)
+    services = core.get_launch_agents()
+    return {
+        "activity": [
+            {
+                "tool_name": a.tool_name,
+                "total": a.total,
+                "failures": a.failures,
+                "failure_rate": round(a.failure_rate, 4),
+                "last_call": a.last_call,
+                "tables": sorted(set(a.tables)),
+            }
+            for a in activity
+        ],
+        "services": [
+            {
+                "label": s.label,
+                "running": s.running,
+                "pid": s.pid,
+                "keep_alive": s.keep_alive,
+                "last_exit_code": s.last_exit_code,
+            }
+            for s in services
+        ],
+    }
+
+
+@app.get("/api/models")
+def api_models(lookback_hours: float = 24 * 7):
+    usage = core.get_model_usage(lookback_hours=lookback_hours)
+    return {
+        "usage": [
+            {
+                "tool_name": u.tool_name,
+                "model": u.model,
+                "total": u.total,
+                "failures": u.failures,
+                "failure_rate": round(u.failure_rate, 4),
+            }
+            for u in usage
+        ],
+    }
+
+
+@app.get("/api/tensions")
+def api_tensions():
+    t = core.get_tension_summary(VAULT_PATH)
+    return {
+        "pending_count": t.pending_count,
+        "active_count": t.active_count,
+        "recent_titles": t.recent_titles,
+    }
+
+
+@app.get("/api/art")
+def api_art():
+    item = core.get_latest_art(ART_ITEMS_DIR)
+    if not item:
+        return {"available": False}
+    return {
+        "available": True,
+        "title": item.title,
+        "self_score": item.self_score,
+        "interest": item.interest,
+        "generated_at": item.generated_at,
+        "image_url": "/api/art/image",
+    }
+
+
+@app.get("/api/art/image")
+def api_art_image():
+    item = core.get_latest_art(ART_ITEMS_DIR)
+    if not item or not item.image_path.exists():
+        raise HTTPException(status_code=404, detail="No image available")
+    return FileResponse(item.image_path)
+
+
+@app.get("/api/japanese-tutor")
+def api_japanese_tutor():
+    j = core.get_japanese_tutor_summary(JAPANESE_TUTOR_URL)
+    return {"reachable": j.reachable, "cards_due": j.cards_due, "mastery": j.mastery}
+
+
+def mount_static() -> None:
+    static_path = Path(__file__).parent / "static"
+    if static_path.exists():
+        app.mount("/", StaticFiles(directory=str(static_path), html=True), name="static")
+
+
+mount_static()
+
+
+def main() -> None:
+    import uvicorn
+
+    port = int(os.environ.get("FLEET_DASHBOARD_PORT", "8422"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
+
+if __name__ == "__main__":
+    main()

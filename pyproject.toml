@@ -1,0 +1,37 @@
+[project]
+name = "fleet-dashboard-service"
+version = "0.1.0"
+description = "Read-only local web dashboard aggregating tool fleet health, vault tensions, artist-agent's latest image, and japanese-tutor's study stats -- one page instead of four."
+requires-python = ">=3.12"
+dependencies = [
+    "local-first-common",
+    "tension-triage-dashboard",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "duckdb>=1.5.0",
+    "python-frontmatter>=1.1.0",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+fleet-dashboard-service = "fleet_dashboard.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fleet_dashboard"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=6.0.0",
+]
+
+[tool.uv.sources]
+local-first-common = { git = "https://github.com/jamalhansen/local-first-common.git", branch = "main" }
+tension-triage-dashboard = { path = "../tension-triage-dashboard" }
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

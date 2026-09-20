@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fleet Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --surface-2: #eeece6;
+    --border: #ddd9d0;
+    --text: #1e1c18;
+    --text-dim: #6b665c;
+    --accent: #a2561f;
+    --accent-soft: #f0e0d1;
+    --good: #2f7d4f;
+    --good-soft: #e2f0e6;
+    --warn: #a97a12;
+    --warn-soft: #f6ecd4;
+    --bad: #b23a2f;
+    --bad-soft: #f7e2df;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171613;
+      --surface: #221f1a;
+      --surface-2: #2b2822;
+      --border: #3a352c;
+      --text: #ece7de;
+      --text-dim: #a39c8e;
+      --accent: #e0975a;
+      --accent-soft: #3a2c1f;
+      --good: #6fc491;
+      --good-soft: #1f2f23;
+      --warn: #d9ab4f;
+      --warn-soft: #332a16;
+      --bad: #e37b6e;
+      --bad-soft: #3a211d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171613;
+    --surface: #221f1a;
+    --surface-2: #2b2822;
+    --border: #3a352c;
+    --text: #ece7de;
+    --text-dim: #a39c8e;
+    --accent: #e0975a;
+    --accent-soft: #3a2c1f;
+    --good: #6fc491;
+    --good-soft: #1f2f23;
+    --warn: #d9ab4f;
+    --warn-soft: #332a16;
+    --bad: #e37b6e;
+    --bad-soft: #3a211d;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  main {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 28px 20px 64px;
+  }
+
+  header.page-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  header.page-head h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  header.page-head .meta {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  header.page-head .meta button {
+    margin-left: 10px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--accent);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 9px;
+    cursor: pointer;
+  }
+  header.page-head .meta button:hover { background: var(--surface-2); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .card h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+  .span-12 { grid-column: span 12; }
+  .span-7  { grid-column: span 7; }
+  .span-5  { grid-column: span 5; }
+  .span-6  { grid-column: span 6; }
+  @media (max-width: 760px) {
+    .span-7, .span-5, .span-6 { grid-column: span 12; }
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .table-scroll { overflow-x: auto; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 9px 2px 7px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .pill.good { background: var(--good-soft); color: var(--good); }
+  .pill.good .dot { background: var(--good); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.warn .dot { background: var(--warn); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.bad .dot { background: var(--bad); }
+  .pill.neutral { background: var(--surface-2); color: var(--text-dim); }
+  .pill.neutral .dot { background: var(--text-dim); }
+
+  .service-list { display: flex; flex-direction: column; gap: 8px; }
+  .service-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .service-row:last-child { border-bottom: none; }
+  .service-row .label { font-family: var(--mono); font-size: 12.5px; }
+  .service-row .flags { color: var(--text-dim); font-size: 11px; font-family: var(--mono); }
+
+  .tension-count-row { display: flex; gap: 22px; margin-bottom: 12px; }
+  .tension-count { display: flex; flex-direction: column; }
+  .tension-count .n { font-family: var(--mono); font-size: 26px; font-weight: 600; line-height: 1; }
+  .tension-count .l { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .tension-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .tension-list li {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    border-left: 2px solid var(--border);
+    padding-left: 9px;
+  }
+
+  .art-card { display: flex; gap: 16px; align-items: flex-start; }
+  .art-card img {
+    width: 128px;
+    height: 128px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+  .art-card .art-meta { min-width: 0; }
+  .art-card .art-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  .art-card .art-sub { color: var(--text-dim); font-size: 12.5px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .art-card .art-sub span { font-family: var(--mono); }
+
+  .jt-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .jt-stat { display: flex; flex-direction: column; }
+  .jt-stat .n { font-family: var(--mono); font-size: 26px; font-weight: 600; line-height: 1; }
+  .jt-stat .l { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .jt-card a.open-link {
+    font-size: 12.5px;
+    color: var(--accent);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+  }
+  .jt-card a.open-link:hover { background: var(--surface-2); }
+
+  .empty-state { color: var(--text-dim); font-size: 12.5px; padding: 8px 0; }
+  .skeleton { color: var(--text-dim); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<main>
+  <header class="page-head">
+    <h1>Fleet Dashboard</h1>
+    <div class="meta"><span id="updated-at">loading&hellip;</span><button id="refresh-btn" type="button">Refresh</button></div>
+  </header>
+
+  <div class="grid">
+    <section class="card span-7">
+      <h2>Tool Activity <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th class="num">Calls</th>
+              <th class="num">Failures</th>
+              <th class="num">Failure&nbsp;rate</th>
+              <th>Last call</th>
+            </tr>
+          </thead>
+          <tbody id="activity-body"><tr><td colspan="5" class="skeleton">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-5">
+      <h2>Services</h2>
+      <div class="service-list" id="services-list"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-7">
+      <h2>Model &amp; Provider Usage</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th>Model</th>
+              <th class="num">Calls</th>
+              <th class="num">Failures</th>
+              <th class="num">Failure&nbsp;rate</th>
+            </tr>
+          </thead>
+          <tbody id="models-body"><tr><td colspan="5" class="skeleton">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-5">
+      <h2>Vault Tensions</h2>
+      <div id="tensions-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-7">
+      <h2>Latest AI Art</h2>
+      <div id="art-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-5">
+      <h2>Japanese Tutor</h2>
+      <div id="jt-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const JAPANESE_TUTOR_UI_URL = "http://127.0.0.1:8421";
+
+function pillFor(rate, total) {
+  if (total === 0) return '<span class="pill neutral"><span class="dot"></span>no calls</span>';
+  if (rate === 0) return '<span class="pill good"><span class="dot"></span>healthy</span>';
+  if (rate < 0.1) return '<span class="pill warn"><span class="dot"></span>' + (rate * 100).toFixed(1) + '%</span>';
+  return '<span class="pill bad"><span class="dot"></span>' + (rate * 100).toFixed(1) + '%</span>';
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso.replace(' ', 'T') + (iso.includes('Z') ? '' : 'Z'));
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+async function loadFleet() {
+  const body = document.getElementById('activity-body');
+  const win = document.getElementById('activity-window');
+  try {
+    const res = await fetch('/api/fleet');
+    const data = await res.json();
+    win.textContent = '(7d)';
+    if (!data.activity.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty-state">No activity in this window.</td></tr>';
+    } else {
+      body.innerHTML = data.activity.map(a => `
+        <tr>
+          <td>${a.tool_name}</td>
+          <td class="num">${a.total}</td>
+          <td class="num">${a.failures}</td>
+          <td class="num">${pillFor(a.failure_rate, a.total)}</td>
+          <td>${fmtTime(a.last_call)}</td>
+        </tr>`).join('');
+    }
+
+    const svcList = document.getElementById('services-list');
+    if (!data.services.length) {
+      svcList.innerHTML = '<div class="empty-state">No com.localfirst.* / com.jamalhansen.* LaunchAgents found.</div>';
+    } else {
+      svcList.innerHTML = data.services.map(s => `
+        <div class="service-row">
+          <span class="label">${s.label.replace(/^com\.(localfirst|jamalhansen)\./, '')}</span>
+          <span class="flags">
+            ${s.running ? `<span class="pill good"><span class="dot"></span>pid ${s.pid}</span>` : '<span class="pill neutral"><span class="dot"></span>stopped</span>'}
+            ${s.keep_alive ? ' keepalive' : ''}
+          </span>
+        </div>`).join('');
+    }
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="5" class="empty-state">Could not reach the dashboard API.</td></tr>';
+  }
+}
+
+async function loadModels() {
+  const body = document.getElementById('models-body');
+  try {
+    const res = await fetch('/api/models');
+    const data = await res.json();
+    if (!data.usage.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty-state">No model calls logged in this window.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.usage.map(u => `
+      <tr>
+        <td>${u.tool_name}</td>
+        <td>${u.model || '(unset)'}</td>
+        <td class="num">${u.total}</td>
+        <td class="num">${u.failures}</td>
+        <td class="num">${pillFor(u.failure_rate, u.total)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="5" class="empty-state">Could not reach the dashboard API.</td></tr>';
+  }
+}
+
+async function loadTensions() {
+  const body = document.getElementById('tensions-body');
+  try {
+    const res = await fetch('/api/tensions');
+    const t = await res.json();
+    const list = t.recent_titles.length
+      ? '<ul class="tension-list">' + t.recent_titles.map(x => `<li>${x}</li>`).join('') + '</ul>'
+      : '<div class="empty-state">No tensions on file.</div>';
+    body.innerHTML = `
+      <div class="tension-count-row">
+        <div class="tension-count"><span class="n">${t.pending_count}</span><span class="l">Pending</span></div>
+        <div class="tension-count"><span class="n">${t.active_count}</span><span class="l">Active</span></div>
+      </div>
+      ${list}`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
+async function loadArt() {
+  const body = document.getElementById('art-body');
+  try {
+    const res = await fetch('/api/art');
+    const a = await res.json();
+    if (!a.available) {
+      body.innerHTML = '<div class="empty-state">No generated art found yet.</div>';
+      return;
+    }
+    body.innerHTML = `
+      <div class="art-card">
+        <img src="${a.image_url}" alt="${a.title}">
+        <div class="art-meta">
+          <div class="art-title">${a.title}</div>
+          <div class="art-sub">
+            ${a.self_score != null ? `<span>self-score ${a.self_score}</span>` : ''}
+            ${a.interest ? `<span>${a.interest}</span>` : ''}
+            ${a.generated_at ? `<span>${fmtTime(a.generated_at)}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
+async function loadJapaneseTutor() {
+  const body = document.getElementById('jt-body');
+  try {
+    const res = await fetch('/api/japanese-tutor');
+    const j = await res.json();
+    if (!j.reachable) {
+      body.innerHTML = '<div class="empty-state">Not running right now.</div>';
+      return;
+    }
+    body.innerHTML = `
+      <div class="jt-card">
+        <div class="jt-stat"><span class="n">${j.cards_due}</span><span class="l">Cards due</span></div>
+        <a class="open-link" href="${JAPANESE_TUTOR_UI_URL}" target="_blank" rel="noopener">Open &rarr;</a>
+      </div>`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
+function refreshAll() {
+  document.getElementById('updated-at').textContent = 'refreshing…';
+  Promise.allSettled([loadFleet(), loadModels(), loadTensions(), loadArt(), loadJapaneseTutor()])
+    .then(() => {
+      document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
+    });
+}
+
+document.getElementById('refresh-btn').addEventListener('click', refreshAll);
+refreshAll();
+</script>
+</body>
+</html>

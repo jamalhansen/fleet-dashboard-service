@@ -116,4 +116,26 @@ def test_japanese_tutor_endpoint_unreachable():
     with patch("fleet_dashboard.server.core.get_japanese_tutor_summary", return_value=summary):
         resp = client.get("/api/japanese-tutor")
     assert resp.status_code == 200
-    assert resp.json() == {"reachable": False, "cards_due": 0, "mastery": []}
+    assert resp.json() == {
+        "reachable": False,
+        "cards_due": 0,
+        "mastery": [],
+        "reviews_today_attempts": 0,
+        "reviews_today_distinct_cards": 0,
+    }
+
+
+def test_japanese_tutor_endpoint_includes_reviews_today():
+    summary = core.JapaneseTutorSummary(
+        reachable=True,
+        cards_due=3,
+        mastery=[],
+        reviews_today_attempts=7,
+        reviews_today_distinct_cards=5,
+    )
+    with patch("fleet_dashboard.server.core.get_japanese_tutor_summary", return_value=summary):
+        resp = client.get("/api/japanese-tutor")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reviews_today_attempts"] == 7
+    assert body["reviews_today_distinct_cards"] == 5

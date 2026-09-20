@@ -436,6 +436,8 @@ class JapaneseTutorSummary:
     reachable: bool
     cards_due: int = 0
     mastery: list[dict] = field(default_factory=list)
+    reviews_today_attempts: int = 0
+    reviews_today_distinct_cards: int = 0
 
 
 def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> JapaneseTutorSummary:
@@ -446,12 +448,24 @@ def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> Japan
     with not-yet-due cards to keep a study session full), so its length
     never reflects real review progress. The count endpoint is the true
     number of cards overdue right now.
+
+    Also reads /api/reviews/today -- due_count alone couldn't explain why
+    reviewing ~15 cards barely moved it; attempts (every submission,
+    including retries) vs distinct_cards (unique characters touched) is
+    the real answer, and the two together show it.
     """
     try:
         with httpx.Client(timeout=3.0) as client:
             due_count = client.get(f"{base_url}/api/cards/due/count").json().get("due_count", 0)
             mastery = client.get(f"{base_url}/api/mastery").json()
-        return JapaneseTutorSummary(reachable=True, cards_due=due_count, mastery=mastery)
+            reviews_today = client.get(f"{base_url}/api/reviews/today").json()
+        return JapaneseTutorSummary(
+            reachable=True,
+            cards_due=due_count,
+            mastery=mastery,
+            reviews_today_attempts=reviews_today.get("attempts", 0),
+            reviews_today_distinct_cards=reviews_today.get("distinct_cards", 0),
+        )
     except Exception:  # noqa: BLE001 - the server simply not running is expected, not an error to surface
         return JapaneseTutorSummary(reachable=False)
 

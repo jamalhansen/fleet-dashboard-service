@@ -225,6 +225,7 @@
   .art-card .art-sub span { font-family: var(--mono); }
 
   .jt-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .jt-stats { display: flex; gap: 20px; }
   .jt-stat { display: flex; flex-direction: column; }
   .jt-stat .n { font-family: var(--mono); font-size: 26px; font-weight: 600; line-height: 1; }
   .jt-stat .l { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
@@ -601,7 +602,11 @@ async function loadJapaneseTutor() {
     }
     body.innerHTML = `
       <div class="jt-card">
-        <div class="jt-stat"><span class="n">${j.cards_due}</span><span class="l">Cards due</span></div>
+        <div class="jt-stats">
+          <div class="jt-stat"><span class="n">${j.cards_due}</span><span class="l">Cards due</span></div>
+          <div class="jt-stat"><span class="n">${j.reviews_today_attempts}</span><span class="l">Reviewed today</span></div>
+          <div class="jt-stat"><span class="n">${j.reviews_today_distinct_cards}</span><span class="l">Cards touched</span></div>
+        </div>
         <a class="open-link" href="${JAPANESE_TUTOR_UI_URL}" target="_blank" rel="noopener">Open &rarr;</a>
       </div>`;
   } catch (e) {

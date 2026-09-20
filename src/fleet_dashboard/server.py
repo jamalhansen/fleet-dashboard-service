@@ -142,7 +142,13 @@ def api_art_image():
 @app.get("/api/japanese-tutor")
 def api_japanese_tutor():
     j = core.get_japanese_tutor_summary(JAPANESE_TUTOR_URL)
-    return {"reachable": j.reachable, "cards_due": j.cards_due, "mastery": j.mastery}
+    return {
+        "reachable": j.reachable,
+        "cards_due": j.cards_due,
+        "mastery": j.mastery,
+        "reviews_today_attempts": j.reviews_today_attempts,
+        "reviews_today_distinct_cards": j.reviews_today_distinct_cards,
+    }
 
 
 def mount_static() -> None:

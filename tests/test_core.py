@@ -370,11 +370,13 @@ class TestGetJapaneseTutorSummary:
         due_resp.json.return_value = {"due_count": 3}
         mastery_resp = MagicMock()
         mastery_resp.json.return_value = [{"stage": "hiragana", "mastered": 5}]
+        reviews_resp = MagicMock()
+        reviews_resp.json.return_value = {"attempts": 7, "distinct_cards": 5}
 
         fake_client = MagicMock()
         fake_client.__enter__.return_value = fake_client
         fake_client.__exit__.return_value = False
-        fake_client.get.side_effect = [due_resp, mastery_resp]
+        fake_client.get.side_effect = [due_resp, mastery_resp, reviews_resp]
 
         with patch("fleet_dashboard.core.httpx.Client", return_value=fake_client):
             result = core.get_japanese_tutor_summary()
@@ -382,7 +384,10 @@ class TestGetJapaneseTutorSummary:
         assert result.reachable is True
         assert result.cards_due == 3
         assert result.mastery == [{"stage": "hiragana", "mastered": 5}]
+        assert result.reviews_today_attempts == 7
+        assert result.reviews_today_distinct_cards == 5
         fake_client.get.assert_any_call("http://127.0.0.1:8421/api/cards/due/count")
+        fake_client.get.assert_any_call("http://127.0.0.1:8421/api/reviews/today")
 
 
 class TestGetVaultHealth:

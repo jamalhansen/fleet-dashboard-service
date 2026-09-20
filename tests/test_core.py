@@ -152,8 +152,10 @@ class TestGetModelUsage:
         assert by_model["phi4-mini"].total == 3
         assert by_model["phi4-mini"].failures == 2
         assert by_model["phi4-mini"].failure_rate == 2 / 3
+        assert by_model["phi4-mini"].provider == "ollama"
         assert by_model["deepseek-chat"].total == 1
         assert by_model["deepseek-chat"].failures == 0
+        assert by_model["deepseek-chat"].provider == "deepseek"
 
     def test_null_model_reported_as_unset(self, tmp_path, monkeypatch):
         db = tmp_path / "test.duckdb"
@@ -168,6 +170,31 @@ class TestGetModelUsage:
 
         usage = core.get_model_usage()
         assert usage[0].model == "(unset)"
+        assert usage[0].provider == "(unset)"
+
+    def test_provider_prefixed_and_bare_model_collapse_into_one_row(self, tmp_path, monkeypatch):
+        """Real 2026-09-20 production data has both "phi4-mini" and
+        "ollama:phi4-mini" logged for the same tool -- same logical model,
+        should not double-count as two rows."""
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, success) VALUES "
+            "('my-tool', 'phi4-mini', true), "
+            "('my-tool', 'ollama:phi4-mini', true)"
+        )
+        conn.close()
+
+        usage = core.get_model_usage()
+        assert len(usage) == 1
+        assert usage[0].provider == "ollama"
+        assert usage[0].model == "phi4-mini"
+        assert usage[0].total == 2
 
     def test_lock_conflict_returns_empty_not_raises(self, tmp_path, monkeypatch):
         db = tmp_path / "test.duckdb"
@@ -180,6 +207,69 @@ class TestGetModelUsage:
         conn.close()
         with patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")):
             assert core.get_model_usage() == []
+
+
+class TestClassifyProvider:
+    def test_unset_model(self):
+        assert core.classify_provider(None) == ("(unset)", "(unset)")
+        assert core.classify_provider("") == ("(unset)", "(unset)")
+
+    def test_known_prefix_splits_provider_and_model(self):
+        assert core.classify_provider("ollama:phi4-mini") == ("ollama", "phi4-mini")
+        assert core.classify_provider("anthropic:claude-haiku-4-5-20251001") == ("anthropic", "claude-haiku-4-5-20251001")
+        assert core.classify_provider("mock:test-model") == ("mock", "test-model")
+
+    def test_unrecognized_prefix_is_not_split(self):
+        """"llama3.2:3b" has a colon but "llama3.2" isn't a known provider
+        name -- it's an Ollama tag, must not be misread as provider "llama3.2"."""
+        assert core.classify_provider("llama3.2:3b") == ("ollama", "llama3.2:3b")
+
+    def test_claude_and_gemini_and_deepseek_prefixes(self):
+        assert core.classify_provider("claude-sonnet-5")[0] == "anthropic"
+        assert core.classify_provider("gemini-2.0-flash")[0] == "gemini"
+        assert core.classify_provider("deepseek-chat")[0] == "deepseek"
+
+    def test_known_groq_default_model(self):
+        assert core.classify_provider("llama-3.3-70b-versatile")[0] == "groq"
+
+    def test_mock_repr_leaked_from_a_test(self):
+        assert core.classify_provider("<MagicMock name='mock.model' id='123'>")[0] == "mock"
+
+    def test_unrecognized_model_defaults_to_ollama(self):
+        assert core.classify_provider("qwen2.5:7b")[0] == "ollama"
+        assert core.classify_provider("nomic-embed-text")[0] == "ollama"
+
+
+class TestGetProviderUsage:
+    def test_missing_db_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(tmp_path / "nope.duckdb"))
+        assert core.get_provider_usage() == []
+
+    def test_rolls_up_across_tools_and_models(self, tmp_path, monkeypatch):
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, success) VALUES "
+            "('japanese-tutor', 'phi4-mini', false), "
+            "('japanese-tutor', 'phi4-mini', true), "
+            "('photo-renamer', 'qwen2.5:7b', true), "
+            "('japanese-tutor', 'deepseek-chat', true)"
+        )
+        conn.close()
+
+        usage = core.get_provider_usage()
+        by_provider = {p.provider: p for p in usage}
+        assert by_provider["ollama"].total == 3
+        assert by_provider["ollama"].failures == 1
+        assert by_provider["ollama"].tool_count == 2
+        assert by_provider["ollama"].model_count == 2
+        assert by_provider["deepseek"].total == 1
+        assert by_provider["deepseek"].tool_count == 1
 
 
 class TestGetTensionSummary:

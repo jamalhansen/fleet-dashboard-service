@@ -92,6 +92,7 @@ def get_fleet_activity(lookback_hours: float = 24 * 7) -> list[ToolActivity]:
 class ModelUsage:
     tool_name: str
     model: str
+    provider: str
     total: int
     failures: int
 
@@ -100,22 +101,77 @@ class ModelUsage:
         return self.failures / self.total if self.total else 0.0
 
 
+@dataclass
+class ProviderUsage:
+    provider: str
+    total: int
+    failures: int
+    tool_count: int
+    model_count: int
+
+    @property
+    def failure_rate(self) -> float:
+        return self.failures / self.total if self.total else 0.0
+
+
 _MODEL_USAGE_QUERY = """
-    SELECT tool_name, COALESCE(model, '(unset)') AS model,
+    SELECT tool_name, model,
            COUNT(*) AS total, SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS failures
     FROM processing_log
     WHERE created_at > ?
     GROUP BY tool_name, model
 """
 
+# processing_log has no provider column -- `model` is the only signal recorded
+# (see local_first_common.tracking). Classification below is a best-effort
+# heuristic against real strings observed in production (2026-09-20:
+# "ollama:phi4-mini", "anthropic:claude-haiku-4-5-20251001", bare "phi4-mini",
+# "claude-sonnet-5", "deepseek-chat", "llama-3.3-70b-versatile", test leakage
+# like MagicMock reprs) -- not an authoritative source. A model string that
+# doesn't match any known pattern defaults to "ollama", since every uncataloged
+# local model tag observed so far (qwen2.5:7b, gemma4:latest, llava:7b, ...)
+# is one.
+_KNOWN_PROVIDER_PREFIXES = {"ollama", "local", "anthropic", "gemini", "groq", "deepseek", "mock"}
+_KNOWN_GROQ_MODELS = {"llama-3.3-70b-versatile"}
+
+
+def classify_provider(model: str | None) -> tuple[str, str]:
+    """Best-effort (provider, display_model) from a raw processing_log.model
+    string. See the module comment above _MODEL_USAGE_QUERY for why this is a
+    heuristic, not a lookup against real data."""
+    if not model:
+        return "(unset)", "(unset)"
+    if ":" in model:
+        prefix, _, rest = model.partition(":")
+        if prefix in _KNOWN_PROVIDER_PREFIXES:
+            return prefix, rest or "(unset)"
+    lowered = model.lower()
+    if lowered.startswith("<"):  # a repr string leaked from a test mock, e.g. "<MagicMock ...>"
+        return "mock", model
+    if lowered.startswith("claude"):
+        return "anthropic", model
+    if lowered.startswith("gemini"):
+        return "gemini", model
+    if lowered.startswith("deepseek"):
+        return "deepseek", model
+    if lowered.startswith("mock"):
+        return "mock", model
+    if lowered == "local":
+        return "local", model
+    if model in _KNOWN_GROQ_MODELS:
+        return "groq", model
+    return "ollama", model
+
 
 def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
-    """Per (tool, model) call counts and failure rates -- the "which
+    """Per (tool, provider, model) call counts and failure rates -- the "which
     providers are we actually using" view. A FallbackProvider failure is its
     own row here (the primary's real model, success=False), distinct from
     the fallback's own successful row, so a model swap's real cost/reliability
     is directly comparable rather than hidden inside one merged number.
-    Never raises: a lock conflict or missing DB yields []."""
+    A raw model string with and without a provider prefix (e.g. "phi4-mini"
+    vs "ollama:phi4-mini") collapses to the same row here, since they're the
+    same logical model. Never raises: a lock conflict or missing DB yields []."""
     db_path = get_tracking_db_path()
     if not db_path.exists():
         return []
@@ -132,8 +188,41 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
     except Exception:  # noqa: BLE001 - best-effort read against a DB other tools may be writing to concurrently
         return []
 
-    usage = [ModelUsage(tool_name=t, model=m, total=total, failures=failures or 0) for t, m, total, failures in rows]
-    return sorted(usage, key=lambda u: u.total, reverse=True)
+    merged: dict[tuple[str, str, str], ModelUsage] = {}
+    for tool_name, raw_model, total, failures in rows:
+        provider, model = classify_provider(raw_model)
+        key = (tool_name, provider, model)
+        entry = merged.setdefault(key, ModelUsage(tool_name=tool_name, model=model, provider=provider, total=0, failures=0))
+        entry.total += total
+        entry.failures += failures or 0
+
+    return sorted(merged.values(), key=lambda u: u.total, reverse=True)
+
+
+def get_provider_usage(lookback_hours: float = 24 * 7) -> list[ProviderUsage]:
+    """Fleet-wide rollup of get_model_usage() by provider alone -- for
+    comparing providers directly (cost/reliability trials) rather than
+    reading it back out of a long per-tool table. Never raises (delegates to
+    get_model_usage(), which already never raises)."""
+    by_provider: dict[str, dict] = {}
+    for u in get_model_usage(lookback_hours=lookback_hours):
+        entry = by_provider.setdefault(u.provider, {"total": 0, "failures": 0, "tools": set(), "models": set()})
+        entry["total"] += u.total
+        entry["failures"] += u.failures
+        entry["tools"].add(u.tool_name)
+        entry["models"].add(u.model)
+
+    usage = [
+        ProviderUsage(
+            provider=provider,
+            total=d["total"],
+            failures=d["failures"],
+            tool_count=len(d["tools"]),
+            model_count=len(d["models"]),
+        )
+        for provider, d in by_provider.items()
+    ]
+    return sorted(usage, key=lambda p: p.total, reverse=True)
 
 
 def _launch_agents_dir() -> Path:

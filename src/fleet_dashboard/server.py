@@ -52,16 +52,29 @@ def api_fleet(lookback_hours: float = 24 * 7):
 @app.get("/api/models")
 def api_models(lookback_hours: float = 24 * 7):
     usage = core.get_model_usage(lookback_hours=lookback_hours)
+    by_provider = core.get_provider_usage(lookback_hours=lookback_hours)
     return {
         "usage": [
             {
                 "tool_name": u.tool_name,
+                "provider": u.provider,
                 "model": u.model,
                 "total": u.total,
                 "failures": u.failures,
                 "failure_rate": round(u.failure_rate, 4),
             }
             for u in usage
+        ],
+        "by_provider": [
+            {
+                "provider": p.provider,
+                "total": p.total,
+                "failures": p.failures,
+                "failure_rate": round(p.failure_rate, 4),
+                "tool_count": p.tool_count,
+                "model_count": p.model_count,
+            }
+            for p in by_provider
         ],
     }
 

@@ -169,7 +169,14 @@
   }
   .service-row:last-child { border-bottom: none; }
   .service-row .label { font-family: var(--mono); font-size: 12.5px; }
-  .service-row .flags { color: var(--text-dim); font-size: 11px; font-family: var(--mono); }
+  .service-row .flags {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: var(--mono);
+  }
 
   .tension-count-row { display: flex; gap: 22px; margin-bottom: 12px; }
   .tension-count { display: flex; flex-direction: column; }
@@ -247,20 +254,26 @@
       <div class="service-list" id="services-list"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
+    <section class="card span-5">
+      <h2>Usage by Provider</h2>
+      <div class="service-list" id="providers-list"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
     <section class="card span-7">
-      <h2>Model &amp; Provider Usage</h2>
+      <h2>Usage by Tool &amp; Model</h2>
       <div class="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Tool</th>
+              <th>Provider</th>
               <th>Model</th>
               <th class="num">Calls</th>
               <th class="num">Failures</th>
               <th class="num">Failure&nbsp;rate</th>
             </tr>
           </thead>
-          <tbody id="models-body"><tr><td colspan="5" class="skeleton">Loading&hellip;</td></tr></tbody>
+          <tbody id="models-body"><tr><td colspan="6" class="skeleton">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -339,23 +352,40 @@ async function loadFleet() {
 
 async function loadModels() {
   const body = document.getElementById('models-body');
+  const providersList = document.getElementById('providers-list');
   try {
     const res = await fetch('/api/models');
     const data = await res.json();
+
+    if (!data.by_provider.length) {
+      providersList.innerHTML = '<div class="empty-state">No model calls logged in this window.</div>';
+    } else {
+      providersList.innerHTML = data.by_provider.map(p => `
+        <div class="service-row">
+          <span class="label">${p.provider}</span>
+          <span class="flags">
+            <span style="font-family:var(--mono);">${p.total} calls &middot; ${p.model_count} model${p.model_count === 1 ? '' : 's'} &middot; ${p.tool_count} tool${p.tool_count === 1 ? '' : 's'}</span>
+            ${pillFor(p.failure_rate, p.total)}
+          </span>
+        </div>`).join('');
+    }
+
     if (!data.usage.length) {
-      body.innerHTML = '<tr><td colspan="5" class="empty-state">No model calls logged in this window.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty-state">No model calls logged in this window.</td></tr>';
       return;
     }
     body.innerHTML = data.usage.map(u => `
       <tr>
         <td>${u.tool_name}</td>
-        <td>${u.model || '(unset)'}</td>
+        <td>${u.provider}</td>
+        <td>${u.model}</td>
         <td class="num">${u.total}</td>
         <td class="num">${u.failures}</td>
         <td class="num">${pillFor(u.failure_rate, u.total)}</td>
       </tr>`).join('');
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="5" class="empty-state">Could not reach the dashboard API.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty-state">Could not reach the dashboard API.</td></tr>';
+    providersList.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }
 }
 

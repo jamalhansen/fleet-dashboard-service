@@ -23,17 +23,26 @@ def test_fleet_endpoint_shape():
 
 def test_models_endpoint_shape():
     usage = [
-        core.ModelUsage(tool_name="japanese-tutor", model="phi4-mini", total=8, failures=2),
-        core.ModelUsage(tool_name="japanese-tutor", model="deepseek-chat", total=2, failures=0),
+        core.ModelUsage(tool_name="japanese-tutor", model="phi4-mini", provider="ollama", total=8, failures=2),
+        core.ModelUsage(tool_name="japanese-tutor", model="deepseek-chat", provider="deepseek", total=2, failures=0),
     ]
-    with patch("fleet_dashboard.server.core.get_model_usage", return_value=usage):
+    by_provider = [
+        core.ProviderUsage(provider="ollama", total=8, failures=2, tool_count=1, model_count=1),
+        core.ProviderUsage(provider="deepseek", total=2, failures=0, tool_count=1, model_count=1),
+    ]
+    with patch("fleet_dashboard.server.core.get_model_usage", return_value=usage), \
+         patch("fleet_dashboard.server.core.get_provider_usage", return_value=by_provider):
         resp = client.get("/api/models")
     assert resp.status_code == 200
     body = resp.json()
     assert body["usage"][0]["tool_name"] == "japanese-tutor"
+    assert body["usage"][0]["provider"] == "ollama"
     assert body["usage"][0]["model"] == "phi4-mini"
     assert body["usage"][0]["failure_rate"] == 0.25
     assert body["usage"][1]["model"] == "deepseek-chat"
+    assert body["by_provider"][0]["provider"] == "ollama"
+    assert body["by_provider"][0]["tool_count"] == 1
+    assert body["by_provider"][1]["provider"] == "deepseek"
 
 
 def test_tensions_endpoint_shape():

@@ -131,6 +131,20 @@ def api_frontmatter_validation():
     }
 
 
+@app.get("/api/repo-health")
+def api_repo_health():
+    h = core.get_repo_health()
+    if not h.available:
+        return {"available": False}
+    return {
+        "available": True,
+        "generated_at": h.generated_at,
+        "total": h.total,
+        "healthy": h.healthy,
+        "repos": h.repos,
+    }
+
+
 @app.get("/api/art")
 def api_art():
     item = core.get_latest_art(ART_ITEMS_DIR)

@@ -95,6 +95,32 @@ def test_vault_health_endpoint_rejects_unknown_vault():
     assert resp.status_code == 404
 
 
+def test_repo_health_endpoint_unavailable():
+    summary = core.RepoHealthSummary(available=False)
+    with patch("fleet_dashboard.server.core.get_repo_health", return_value=summary):
+        resp = client.get("/api/repo-health")
+    assert resp.status_code == 200
+    assert resp.json() == {"available": False}
+
+
+def test_repo_health_endpoint_available():
+    summary = core.RepoHealthSummary(
+        available=True,
+        generated_at="2026-09-20T12:00:00Z",
+        total=2,
+        healthy=1,
+        repos=[{"name": "bad-repo", "ok": False, "lint_ok": False, "lint_errors": 3,
+                "tests_ok": True, "tests_passed": 1, "tests_failed": 0,
+                "hooks_ok": True, "dirty": False, "unpushed": 0}],
+    )
+    with patch("fleet_dashboard.server.core.get_repo_health", return_value=summary):
+        resp = client.get("/api/repo-health")
+    body = resp.json()
+    assert body["available"] is True
+    assert body["healthy"] == 1
+    assert body["repos"][0]["name"] == "bad-repo"
+
+
 def test_frontmatter_validation_endpoint_unavailable():
     summary = core.FrontmatterValidationSummary(available=False)
     with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):

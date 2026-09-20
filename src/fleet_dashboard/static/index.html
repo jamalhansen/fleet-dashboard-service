@@ -375,6 +375,11 @@
     </section>
 
     <section class="card span-12">
+      <h2>Repo Health <span class="source">local-first fleet</span></h2>
+      <div id="repo-health-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-12">
       <h2>Frontmatter Validation <span class="source">BrainSync</span></h2>
       <div id="frontmatter-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
@@ -535,6 +540,44 @@ async function loadVaultHealth(vaultKey, vaultName) {
   }
 }
 
+async function loadRepoHealth() {
+  const body = document.getElementById('repo-health-body');
+  try {
+    const res = await fetch('/api/repo-health');
+    const h = await res.json();
+    if (!h.available) {
+      body.innerHTML = '<div class="empty-state">Not run yet.</div>';
+      return;
+    }
+    const unhealthy = h.repos.filter(r => !r.ok);
+    const rows = unhealthy.length ? unhealthy : h.repos;
+    const rowsHtml = rows.map(r => {
+      const flags = [];
+      if (!r.lint_ok) flags.push(`<span class="pill warn"><span class="dot"></span>${r.lint_errors} lint</span>`);
+      if (!r.tests_ok) flags.push(`<span class="pill warn"><span class="dot"></span>${r.tests_failed} test fail</span>`);
+      if (!r.hooks_ok) flags.push(`<span class="pill warn"><span class="dot"></span>hooks outdated</span>`);
+      if (r.dirty) flags.push(`<span class="pill"><span class="dot"></span>dirty</span>`);
+      if (r.unpushed > 0) flags.push(`<span class="pill"><span class="dot"></span>${r.unpushed} unpushed</span>`);
+      const status = r.ok
+        ? `<span class="pill good"><span class="dot"></span>ok</span>`
+        : flags.join(' ');
+      return `<tr><td>${r.name}</td><td>${status}</td></tr>`;
+    }).join('');
+    body.innerHTML = `
+      <div class="tension-count-row">
+        <div class="tension-count"><span class="n">${h.healthy}</span><span class="l">Healthy</span></div>
+        <div class="tension-count"><span class="n">${h.total - h.healthy}</span><span class="l">Need attention</span></div>
+        <div class="tension-count"><span class="n">${h.total}</span><span class="l">Total repos</span></div>
+      </div>
+      <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(h.generated_at)}</span></div>
+      ${unhealthy.length
+        ? `<div class="table-scroll"><table><thead><tr><th>Repo</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`
+        : '<div class="empty-state">All repos healthy.</div>'}`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
 async function loadFrontmatterValidation() {
   const body = document.getElementById('frontmatter-body');
   try {
@@ -636,7 +679,7 @@ function refreshAll() {
     loadTensions(v.key, v.name),
     loadVaultHealth(v.key, v.name),
   ]);
-  Promise.allSettled([loadFleet(), loadModels(), ...vaultLoads, loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
+  Promise.allSettled([loadFleet(), loadModels(), ...vaultLoads, loadRepoHealth(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

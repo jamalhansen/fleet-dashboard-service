@@ -605,3 +605,69 @@ def get_frontmatter_validation(
         )
     except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
         return FrontmatterValidationSummary(available=False)
+
+
+# ---------------------------------------------------------------------------
+# Repo health (personal-infra's repo-health-run script, daily via
+# com.localfirst.repo-health) -- per-repo lint/tests/git/hooks status across
+# the fleet, so a stalled or broken repo surfaces without running `make
+# verify` by hand and reading the log.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RepoHealthSummary:
+    available: bool
+    generated_at: str | None = None
+    total: int = 0
+    healthy: int = 0
+    repos: list[dict] = field(default_factory=list)
+
+
+def get_repo_health(
+    snapshot_path: str | Path = "~/sync/local-first/repo-health-latest.json",
+) -> RepoHealthSummary:
+    """Reads the snapshot repo-health-run writes -- never raises: the job
+    not having run yet (or ever) is a normal, expected state.
+
+    repos is sorted unhealthy-first so the card surfaces what needs
+    attention without the viewer scanning a full alphabetical list.
+    """
+    try:
+        path = Path(snapshot_path).expanduser()
+        if not path.exists():
+            return RepoHealthSummary(available=False)
+        data = json.loads(path.read_text())
+
+        repos = []
+        for name, r in data.get("repos", {}).items():
+            lint = r.get("lint", {})
+            tests = r.get("tests", {})
+            git = r.get("git", {})
+            hooks = r.get("hooks", {})
+            ok = bool(lint.get("ok")) and bool(tests.get("ok")) and bool(hooks.get("ok"))
+            repos.append(
+                {
+                    "name": name,
+                    "ok": ok,
+                    "lint_ok": lint.get("ok", True),
+                    "lint_errors": lint.get("error_count", 0),
+                    "tests_ok": tests.get("ok", True),
+                    "tests_passed": tests.get("passed", 0),
+                    "tests_failed": tests.get("failed", 0),
+                    "hooks_ok": hooks.get("ok", True),
+                    "dirty": git.get("dirty", False),
+                    "unpushed": git.get("unpushed", 0),
+                }
+            )
+        repos.sort(key=lambda r: (r["ok"], r["name"]))
+
+        return RepoHealthSummary(
+            available=True,
+            generated_at=data.get("generated_at"),
+            total=data.get("total", 0),
+            healthy=data.get("healthy", 0),
+            repos=repos,
+        )
+    except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
+        return RepoHealthSummary(available=False)

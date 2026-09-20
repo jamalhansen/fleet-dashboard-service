@@ -442,6 +442,70 @@ class TestGetVaultHealth:
         assert result.observations_pending == 1
 
 
+class TestGetRepoHealth:
+    def test_missing_snapshot_returns_unavailable(self, tmp_path):
+        result = core.get_repo_health(tmp_path / "nope.json")
+        assert result.available is False
+
+    def test_reads_real_snapshot(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({
+            "generated_at": "2026-09-20T12:00:00Z",
+            "total": 2,
+            "healthy": 1,
+            "repos": {
+                "good-repo": {
+                    "lint": {"ok": True, "error_count": 0},
+                    "tests": {"ok": True, "passed": 10, "failed": 0},
+                    "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+                    "hooks": {"ok": True, "installed": True},
+                },
+                "bad-repo": {
+                    "lint": {"ok": False, "error_count": 3},
+                    "tests": {"ok": False, "passed": 0, "failed": 1},
+                    "git": {"dirty": True, "unpushed": 2, "has_remote": True},
+                    "hooks": {"ok": True, "installed": True},
+                },
+            },
+        }))
+        result = core.get_repo_health(snapshot)
+        assert result.available is True
+        assert result.total == 2
+        assert result.healthy == 1
+        assert len(result.repos) == 2
+
+    def test_unhealthy_repos_sorted_first(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({
+            "generated_at": "x",
+            "total": 2,
+            "healthy": 1,
+            "repos": {
+                "a-good-repo": {
+                    "lint": {"ok": True, "error_count": 0},
+                    "tests": {"ok": True, "passed": 1, "failed": 0},
+                    "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+                    "hooks": {"ok": True, "installed": True},
+                },
+                "z-bad-repo": {
+                    "lint": {"ok": False, "error_count": 1},
+                    "tests": {"ok": True, "passed": 1, "failed": 0},
+                    "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+                    "hooks": {"ok": True, "installed": True},
+                },
+            },
+        }))
+        result = core.get_repo_health(snapshot)
+        assert result.repos[0]["name"] == "z-bad-repo"
+        assert result.repos[0]["ok"] is False
+
+    def test_malformed_snapshot_returns_unavailable_not_raises(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text("not valid json {{{")
+        result = core.get_repo_health(snapshot)
+        assert result.available is False
+
+
 class TestGetFrontmatterValidation:
     def test_missing_snapshot_returns_unavailable(self, tmp_path):
         result = core.get_frontmatter_validation(tmp_path / "nope.json")

@@ -111,6 +111,7 @@ def api_frontmatter_validation():
         "total": v.total,
         "invalid_count": v.invalid_count,
         "invalid_files": v.invalid_files,
+        "error_summary": v.error_summary,
     }
 
 

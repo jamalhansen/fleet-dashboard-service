@@ -135,6 +135,14 @@
     margin: 0 0 12px;
     font-weight: 600;
   }
+  .card h2 .source {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 11px;
+  }
   .span-12 { grid-column: span 12; }
   .span-7  { grid-column: span 7; }
   .span-5  { grid-column: span 5; }
@@ -231,6 +239,8 @@
   .jt-card a.open-link:hover { background: var(--surface-2); }
 
   .empty-state { color: var(--text-dim); font-size: 12.5px; padding: 8px 0; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+  details ul li { word-break: break-all; }
   .skeleton { color: var(--text-dim); font-size: 12.5px; }
 </style>
 </head>
@@ -251,7 +261,7 @@
 
   <div class="grid">
     <section class="card span-7">
-      <h2>Tool Activity <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
+      <h2>Tool Activity <span class="source">fleet-wide</span> <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
       <div class="table-scroll">
         <table>
           <thead>
@@ -269,17 +279,17 @@
     </section>
 
     <section class="card span-5">
-      <h2>Services</h2>
+      <h2>Services <span class="source">this machine</span></h2>
       <div class="service-list" id="services-list"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-5">
-      <h2>Usage by Provider</h2>
+      <h2>Usage by Provider <span class="source">fleet-wide</span></h2>
       <div class="service-list" id="providers-list"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-7">
-      <h2>Usage by Tool &amp; Model</h2>
+      <h2>Usage by Tool &amp; Model <span class="source">fleet-wide</span></h2>
       <div class="table-scroll">
         <table>
           <thead>
@@ -298,27 +308,27 @@
     </section>
 
     <section class="card span-5">
-      <h2>Vault Health</h2>
+      <h2>Vault Health <span class="source">Contexta</span></h2>
       <div id="vault-health-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-5">
-      <h2>Vault Tensions</h2>
+      <h2>Vault Tensions <span class="source">Contexta</span></h2>
       <div id="tensions-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-7">
-      <h2>Latest AI Art</h2>
+      <h2>Latest AI Art <span class="source">~/iCloud/ai-artist</span></h2>
       <div id="art-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-5">
-      <h2>Japanese Tutor</h2>
+      <h2>Japanese Tutor <span class="source">own DB</span></h2>
       <div id="jt-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-12">
-      <h2>Frontmatter Validation</h2>
+      <h2>Frontmatter Validation <span class="source">BrainSync</span></h2>
       <div id="frontmatter-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
   </div>
@@ -477,18 +487,26 @@ async function loadFrontmatterValidation() {
       body.innerHTML = '<div class="empty-state">Not run yet.</div>';
       return;
     }
-    const filesList = v.invalid_files.length
-      ? `<div class="table-scroll"><table><thead><tr><th>File</th><th>Errors</th></tr></thead><tbody>` +
-        v.invalid_files.map(f => `<tr><td>${f.file}</td><td>${(f.errors || []).join('; ')}</td></tr>`).join('') +
+    const issuesList = v.error_summary.length
+      ? `<div class="table-scroll"><table><thead><tr><th>Issue</th><th class="num">Files</th><th>Affected</th></tr></thead><tbody>` +
+        v.error_summary.map(e => `
+          <tr>
+            <td>${e.error}</td>
+            <td class="num">${e.count}</td>
+            <td><details><summary>${e.files.length} shown${e.more ? ` + ${e.more} more` : ''}</summary>
+              <ul class="tension-list" style="margin-top:6px;">${e.files.map(f => `<li>${f}</li>`).join('')}</ul>
+            </details></td>
+          </tr>`).join('') +
         `</tbody></table></div>`
-      : '';
+      : '<div class="empty-state">No issues -- everything checked is valid.</div>';
     body.innerHTML = `
       <div class="tension-count-row">
         <div class="tension-count"><span class="n">${v.total}</span><span class="l">Files checked</span></div>
         <div class="tension-count"><span class="n">${v.invalid_count}</span><span class="l">Invalid</span></div>
+        <div class="tension-count"><span class="n">${v.error_summary.length}</span><span class="l">Distinct issues</span></div>
       </div>
       <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(v.generated_at)}</span></div>
-      ${filesList}`;
+      ${issuesList}`;
   } catch (e) {
     body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }

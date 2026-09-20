@@ -464,24 +464,54 @@ class FrontmatterValidationSummary:
     total: int = 0
     invalid_count: int = 0
     invalid_files: list[dict] = field(default_factory=list)
+    error_summary: list[dict] = field(default_factory=list)
+
+
+_ERROR_SUMMARY_FILES_CAP = 20  # per error type -- some real groups run 100+ files, showing all isn't "a summary"
 
 
 def get_frontmatter_validation(
     snapshot_path: str | Path = "~/sync/local-first/frontmatter-validation-latest.json",
 ) -> FrontmatterValidationSummary:
     """Reads the snapshot frontmatter-validation-run writes -- never raises:
-    the job not having run yet (or ever) is a normal, expected state."""
+    the job not having run yet (or ever) is a normal, expected state.
+
+    error_summary groups every invalid file by its exact error text (one
+    file can appear under more than one error) so issues can be addressed
+    together -- "170 files are missing canonical_url" is actionable in a way
+    a 256-row flat file list isn't. Built from the full invalid_files list in
+    the snapshot, not the truncated one this function also returns for the
+    per-file detail view.
+    """
     try:
         path = Path(snapshot_path).expanduser()
         if not path.exists():
             return FrontmatterValidationSummary(available=False)
         data = json.loads(path.read_text())
+        all_invalid = data.get("invalid_files", [])
+
+        by_error: dict[str, list[str]] = {}
+        for entry in all_invalid:
+            for err in entry.get("errors", []):
+                by_error.setdefault(err, []).append(entry.get("file", ""))
+
+        error_summary = [
+            {
+                "error": err,
+                "count": len(files),
+                "files": files[:_ERROR_SUMMARY_FILES_CAP],
+                "more": max(0, len(files) - _ERROR_SUMMARY_FILES_CAP),
+            }
+            for err, files in sorted(by_error.items(), key=lambda kv: len(kv[1]), reverse=True)
+        ]
+
         return FrontmatterValidationSummary(
             available=True,
             generated_at=data.get("generated_at"),
             total=data.get("total", 0),
             invalid_count=data.get("invalid_count", 0),
-            invalid_files=data.get("invalid_files", [])[:10],
+            invalid_files=all_invalid[:10],
+            error_summary=error_summary,
         )
     except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
         return FrontmatterValidationSummary(available=False)

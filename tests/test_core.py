@@ -460,3 +460,68 @@ class TestGetFrontmatterValidation:
         snapshot.write_text("not valid json {{{")
         result = core.get_frontmatter_validation(snapshot)
         assert result.available is False
+
+    def test_error_summary_groups_files_by_error_text(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [
+            {"file": "a.md", "errors": ["Missing universal field: 'tags'"]},
+            {"file": "b.md", "errors": ["Missing universal field: 'tags'"]},
+            {"file": "c.md", "errors": ["Missing universal field: 'canonical_url'"]},
+        ]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 3, "invalid_count": 3, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        by_error = {e["error"]: e for e in result.error_summary}
+        assert by_error["Missing universal field: 'tags'"]["count"] == 2
+        assert set(by_error["Missing universal field: 'tags'"]["files"]) == {"a.md", "b.md"}
+        assert by_error["Missing universal field: 'canonical_url'"]["count"] == 1
+
+    def test_error_summary_sorted_by_count_descending(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [
+            {"file": "a.md", "errors": ["rare error"]},
+            {"file": "b.md", "errors": ["common error"]},
+            {"file": "c.md", "errors": ["common error"]},
+            {"file": "d.md", "errors": ["common error"]},
+        ]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 4, "invalid_count": 4, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        assert result.error_summary[0]["error"] == "common error"
+        assert result.error_summary[0]["count"] == 3
+        assert result.error_summary[1]["error"] == "rare error"
+
+    def test_error_summary_covers_all_invalid_files_not_just_the_truncated_ten(self, tmp_path):
+        """error_summary must reflect all 25 invalid files, even though
+        invalid_files itself is truncated to 10 for the per-file view."""
+        snapshot = tmp_path / "snapshot.json"
+        files = [{"file": f"{i}.md", "errors": ["shared error"]} for i in range(25)]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 25, "invalid_count": 25, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        assert len(result.invalid_files) == 10
+        assert result.error_summary[0]["count"] == 25
+
+    def test_error_summary_files_capped_with_a_more_count(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [{"file": f"{i}.md", "errors": ["shared error"]} for i in range(25)]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 25, "invalid_count": 25, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        entry = result.error_summary[0]
+        assert len(entry["files"]) == 20
+        assert entry["more"] == 5
+
+    def test_error_summary_a_file_with_multiple_errors_counts_under_each(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [{"file": "a.md", "errors": ["error one", "error two"]}]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 1, "invalid_count": 1, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        errors = {e["error"] for e in result.error_summary}
+        assert errors == {"error one", "error two"}

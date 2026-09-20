@@ -19,6 +19,15 @@ VAULT_PATH = os.environ.get("FLEET_DASHBOARD_VAULT_PATH") or str(Path.home() / "
 ART_ITEMS_DIR = os.environ.get("FLEET_DASHBOARD_ART_ITEMS_DIR") or "~/iCloud/ai-artist/items"
 JAPANESE_TUTOR_URL = os.environ.get("JAPANESE_TUTOR_URL") or "http://127.0.0.1:8421"
 
+# Jamal's two Obsidian vaults with the ops/ structure vault-health and
+# tensions read: Contexta (thinking) and KeySix (work thinking, added
+# 2026-09-20 -- was hardcoded to Contexta only, so KeySix's own
+# observations/tensions/inbox were invisible from the dashboard).
+VAULTS = {
+    "Contexta": VAULT_PATH,
+    "KeySix": os.environ.get("FLEET_DASHBOARD_KEYSIX_PATH") or str(Path.home() / "vaults" / "KeySix"),
+}
+
 
 @app.get("/api/fleet")
 def api_fleet(lookback_hours: float = 24 * 7):
@@ -79,9 +88,15 @@ def api_models(lookback_hours: float = 24 * 7):
     }
 
 
+def _resolve_vault_path(vault: str) -> str:
+    if vault not in VAULTS:
+        raise HTTPException(status_code=404, detail=f"Unknown vault '{vault}'. Known: {sorted(VAULTS)}")
+    return VAULTS[vault]
+
+
 @app.get("/api/tensions")
-def api_tensions():
-    t = core.get_tension_summary(VAULT_PATH)
+def api_tensions(vault: str = "Contexta"):
+    t = core.get_tension_summary(_resolve_vault_path(vault))
     return {
         "pending_count": t.pending_count,
         "active_count": t.active_count,
@@ -90,8 +105,8 @@ def api_tensions():
 
 
 @app.get("/api/vault-health")
-def api_vault_health():
-    h = core.get_vault_health(VAULT_PATH)
+def api_vault_health(vault: str = "Contexta"):
+    h = core.get_vault_health(_resolve_vault_path(vault))
     return {
         "observations_pending": h.observations_pending,
         "inbox_count": h.inbox_count,
@@ -145,6 +160,8 @@ def api_japanese_tutor():
     return {
         "reachable": j.reachable,
         "cards_due": j.cards_due,
+        "new_count": j.new_count,
+        "review_count": j.review_count,
         "mastery": j.mastery,
         "reviews_today_attempts": j.reviews_today_attempts,
         "reviews_today_distinct_cards": j.reviews_today_distinct_cards,

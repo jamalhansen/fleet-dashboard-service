@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from fleet_dashboard import core
+from fleet_dashboard import core, server
 from fleet_dashboard.server import app
 
 client = TestClient(app)
@@ -72,6 +72,29 @@ def test_vault_health_endpoint_handles_no_inbox_files():
     assert resp.json()["inbox_oldest_days"] is None
 
 
+def test_vault_health_endpoint_accepts_keysix():
+    """Regression 2026-09-20: vault-health/tensions were hardcoded to
+    Contexta only -- Jamal's other vault (KeySix) was invisible."""
+    health = core.VaultHealth(observations_pending=1, inbox_count=0, inbox_oldest_days=None, last_health_check=None)
+    with patch("fleet_dashboard.server.core.get_vault_health", return_value=health) as mock_get:
+        resp = client.get("/api/vault-health?vault=KeySix")
+    assert resp.status_code == 200
+    mock_get.assert_called_with(server.VAULTS["KeySix"])
+
+
+def test_tensions_endpoint_accepts_keysix():
+    summary = core.TensionSummary(pending_count=0, active_count=0, recent_titles=[])
+    with patch("fleet_dashboard.server.core.get_tension_summary", return_value=summary) as mock_get:
+        resp = client.get("/api/tensions?vault=KeySix")
+    assert resp.status_code == 200
+    mock_get.assert_called_with(server.VAULTS["KeySix"])
+
+
+def test_vault_health_endpoint_rejects_unknown_vault():
+    resp = client.get("/api/vault-health?vault=NotAVault")
+    assert resp.status_code == 404
+
+
 def test_frontmatter_validation_endpoint_unavailable():
     summary = core.FrontmatterValidationSummary(available=False)
     with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):
@@ -119,6 +142,8 @@ def test_japanese_tutor_endpoint_unreachable():
     assert resp.json() == {
         "reachable": False,
         "cards_due": 0,
+        "new_count": 0,
+        "review_count": 0,
         "mastery": [],
         "reviews_today_attempts": 0,
         "reviews_today_distinct_cards": 0,
@@ -129,6 +154,8 @@ def test_japanese_tutor_endpoint_includes_reviews_today():
     summary = core.JapaneseTutorSummary(
         reachable=True,
         cards_due=3,
+        new_count=2,
+        review_count=1,
         mastery=[],
         reviews_today_attempts=7,
         reviews_today_distinct_cards=5,
@@ -137,5 +164,7 @@ def test_japanese_tutor_endpoint_includes_reviews_today():
         resp = client.get("/api/japanese-tutor")
     assert resp.status_code == 200
     body = resp.json()
+    assert body["new_count"] == 2
+    assert body["review_count"] == 1
     assert body["reviews_today_attempts"] == 7
     assert body["reviews_today_distinct_cards"] == 5

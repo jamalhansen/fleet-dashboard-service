@@ -346,12 +346,22 @@
 
     <section class="card span-5">
       <h2>Vault Health <span class="source">Contexta</span></h2>
-      <div id="vault-health-body"><div class="skeleton">Loading&hellip;</div></div>
+      <div id="vault-health-body-contexta"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-5">
       <h2>Vault Tensions <span class="source">Contexta</span></h2>
-      <div id="tensions-body"><div class="skeleton">Loading&hellip;</div></div>
+      <div id="tensions-body-contexta"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-5">
+      <h2>Vault Health <span class="source">KeySix</span></h2>
+      <div id="vault-health-body-keysix"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-5">
+      <h2>Vault Tensions <span class="source">KeySix</span></h2>
+      <div id="tensions-body-keysix"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-7">
@@ -479,10 +489,15 @@ async function loadModels() {
   }
 }
 
-async function loadTensions() {
-  const body = document.getElementById('tensions-body');
+const DASHBOARD_VAULTS = [
+  { key: 'contexta', name: 'Contexta' },
+  { key: 'keysix', name: 'KeySix' },
+];
+
+async function loadTensions(vaultKey, vaultName) {
+  const body = document.getElementById(`tensions-body-${vaultKey}`);
   try {
-    const res = await fetch('/api/tensions');
+    const res = await fetch(`/api/tensions?vault=${encodeURIComponent(vaultName)}`);
     const t = await res.json();
     const list = t.recent_titles.length
       ? '<ul class="tension-list">' + t.recent_titles.map(x => `<li>${x}</li>`).join('') + '</ul>'
@@ -498,10 +513,10 @@ async function loadTensions() {
   }
 }
 
-async function loadVaultHealth() {
-  const body = document.getElementById('vault-health-body');
+async function loadVaultHealth(vaultKey, vaultName) {
+  const body = document.getElementById(`vault-health-body-${vaultKey}`);
   try {
-    const res = await fetch('/api/vault-health');
+    const res = await fetch(`/api/vault-health?vault=${encodeURIComponent(vaultName)}`);
     const h = await res.json();
     const inboxAge = h.inbox_oldest_days != null
       ? `<span class="pill ${h.inbox_oldest_days >= 3 ? 'warn' : 'good'}"><span class="dot"></span>oldest ${h.inbox_oldest_days}d</span>`
@@ -603,7 +618,8 @@ async function loadJapaneseTutor() {
     body.innerHTML = `
       <div class="jt-card">
         <div class="jt-stats">
-          <div class="jt-stat"><span class="n">${j.cards_due}</span><span class="l">Cards due</span></div>
+          <div class="jt-stat"><span class="n">${j.new_count}</span><span class="l">New</span></div>
+          <div class="jt-stat"><span class="n">${j.review_count}</span><span class="l">Due again</span></div>
           <div class="jt-stat"><span class="n">${j.reviews_today_attempts}</span><span class="l">Reviewed today</span></div>
           <div class="jt-stat"><span class="n">${j.reviews_today_distinct_cards}</span><span class="l">Cards touched</span></div>
         </div>
@@ -616,7 +632,11 @@ async function loadJapaneseTutor() {
 
 function refreshAll() {
   document.getElementById('updated-at').textContent = 'refreshing…';
-  Promise.allSettled([loadFleet(), loadModels(), loadTensions(), loadVaultHealth(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
+  const vaultLoads = DASHBOARD_VAULTS.flatMap(v => [
+    loadTensions(v.key, v.name),
+    loadVaultHealth(v.key, v.name),
+  ]);
+  Promise.allSettled([loadFleet(), loadModels(), ...vaultLoads, loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

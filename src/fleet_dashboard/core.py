@@ -435,6 +435,8 @@ def get_latest_art(items_dir: str | Path = "~/iCloud/ai-artist/items") -> ArtIte
 class JapaneseTutorSummary:
     reachable: bool
     cards_due: int = 0
+    new_count: int = 0
+    review_count: int = 0
     mastery: list[dict] = field(default_factory=list)
     reviews_today_attempts: int = 0
     reviews_today_distinct_cards: int = 0
@@ -449,6 +451,10 @@ def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> Japan
     never reflects real review progress. The count endpoint is the true
     number of cards overdue right now.
 
+    Splits cards_due into new_count/review_count -- also found live
+    2026-09-20: a flat due count reads as "overdue re-reviews" but can be
+    entirely never-touched cards, which a learner should treat differently.
+
     Also reads /api/reviews/today -- due_count alone couldn't explain why
     reviewing ~15 cards barely moved it; attempts (every submission,
     including retries) vs distinct_cards (unique characters touched) is
@@ -456,12 +462,14 @@ def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> Japan
     """
     try:
         with httpx.Client(timeout=3.0) as client:
-            due_count = client.get(f"{base_url}/api/cards/due/count").json().get("due_count", 0)
+            due = client.get(f"{base_url}/api/cards/due/count").json()
             mastery = client.get(f"{base_url}/api/mastery").json()
             reviews_today = client.get(f"{base_url}/api/reviews/today").json()
         return JapaneseTutorSummary(
             reachable=True,
-            cards_due=due_count,
+            cards_due=due.get("due_count", 0),
+            new_count=due.get("new_count", 0),
+            review_count=due.get("review_count", 0),
             mastery=mastery,
             reviews_today_attempts=reviews_today.get("attempts", 0),
             reviews_today_distinct_cards=reviews_today.get("distinct_cards", 0),

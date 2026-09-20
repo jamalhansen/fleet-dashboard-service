@@ -367,7 +367,7 @@ class TestGetJapaneseTutorSummary:
         which always returns a fixed-size, backfilled list regardless of
         real review progress. Must read /api/cards/due/count instead."""
         due_resp = MagicMock()
-        due_resp.json.return_value = {"due_count": 3}
+        due_resp.json.return_value = {"due_count": 3, "new_count": 2, "review_count": 1}
         mastery_resp = MagicMock()
         mastery_resp.json.return_value = [{"stage": "hiragana", "mastered": 5}]
         reviews_resp = MagicMock()
@@ -383,6 +383,8 @@ class TestGetJapaneseTutorSummary:
 
         assert result.reachable is True
         assert result.cards_due == 3
+        assert result.new_count == 2
+        assert result.review_count == 1
         assert result.mastery == [{"stage": "hiragana", "mastered": 5}]
         assert result.reviews_today_attempts == 7
         assert result.reviews_today_distinct_cards == 5

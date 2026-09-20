@@ -53,6 +53,47 @@ def test_tensions_endpoint_shape():
     assert resp.json() == {"pending_count": 3, "active_count": 1, "recent_titles": ["A tension"]}
 
 
+def test_vault_health_endpoint_shape():
+    health = core.VaultHealth(observations_pending=7, inbox_count=153, inbox_oldest_days=12.345, last_health_check="2026-09-06")
+    with patch("fleet_dashboard.server.core.get_vault_health", return_value=health):
+        resp = client.get("/api/vault-health")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["observations_pending"] == 7
+    assert body["inbox_count"] == 153
+    assert body["inbox_oldest_days"] == 12.3
+    assert body["last_health_check"] == "2026-09-06"
+
+
+def test_vault_health_endpoint_handles_no_inbox_files():
+    health = core.VaultHealth(observations_pending=0, inbox_count=0, inbox_oldest_days=None, last_health_check=None)
+    with patch("fleet_dashboard.server.core.get_vault_health", return_value=health):
+        resp = client.get("/api/vault-health")
+    assert resp.json()["inbox_oldest_days"] is None
+
+
+def test_frontmatter_validation_endpoint_unavailable():
+    summary = core.FrontmatterValidationSummary(available=False)
+    with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):
+        resp = client.get("/api/frontmatter-validation")
+    assert resp.status_code == 200
+    assert resp.json() == {"available": False}
+
+
+def test_frontmatter_validation_endpoint_available():
+    summary = core.FrontmatterValidationSummary(
+        available=True, generated_at="2026-09-20T12:00:00Z", total=10, invalid_count=2,
+        invalid_files=[{"file": "a.md", "errors": ["x"]}],
+    )
+    with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):
+        resp = client.get("/api/frontmatter-validation")
+    body = resp.json()
+    assert body["available"] is True
+    assert body["total"] == 10
+    assert body["invalid_count"] == 2
+    assert body["invalid_files"] == [{"file": "a.md", "errors": ["x"]}]
+
+
 def test_art_endpoint_no_art_available():
     with patch("fleet_dashboard.server.core.get_latest_art", return_value=None):
         resp = client.get("/api/art")

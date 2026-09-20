@@ -89,6 +89,31 @@ def api_tensions():
     }
 
 
+@app.get("/api/vault-health")
+def api_vault_health():
+    h = core.get_vault_health(VAULT_PATH)
+    return {
+        "observations_pending": h.observations_pending,
+        "inbox_count": h.inbox_count,
+        "inbox_oldest_days": round(h.inbox_oldest_days, 1) if h.inbox_oldest_days is not None else None,
+        "last_health_check": h.last_health_check,
+    }
+
+
+@app.get("/api/frontmatter-validation")
+def api_frontmatter_validation():
+    v = core.get_frontmatter_validation()
+    if not v.available:
+        return {"available": False}
+    return {
+        "available": True,
+        "generated_at": v.generated_at,
+        "total": v.total,
+        "invalid_count": v.invalid_count,
+        "invalid_files": v.invalid_files,
+    }
+
+
 @app.get("/api/art")
 def api_art():
     item = core.get_latest_art(ART_ITEMS_DIR)

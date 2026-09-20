@@ -3,6 +3,7 @@ never raises -- a data source being unreachable (japanese-tutor not running,
 no tensions yet) degrades that section, not the whole page."""
 from __future__ import annotations
 
+import json
 import plistlib
 import subprocess
 from dataclasses import dataclass, field
@@ -307,6 +308,57 @@ class TensionSummary:
     recent_titles: list[str]
 
 
+@dataclass
+class VaultHealth:
+    observations_pending: int
+    inbox_count: int
+    inbox_oldest_days: float | None
+    last_health_check: str | None
+
+
+def get_vault_health(vault_path: str | Path) -> VaultHealth:
+    """Mirrors the maintenance thresholds CLAUDE.md already tracks (10+
+    observations, 3+ day inbox age, 7+ day stale health check) -- visible
+    from the dashboard without opening a session. Never raises: a missing
+    directory or malformed note is skipped, not fatal."""
+    vault = Path(vault_path).expanduser()
+
+    observations_pending = 0
+    obs_dir = vault / "ops" / "observations"
+    if obs_dir.exists():
+        for f in obs_dir.glob("*.md"):
+            try:
+                post = frontmatter.load(f)
+                if post.metadata.get("status") == "pending":
+                    observations_pending += 1
+            except Exception:  # noqa: BLE001, S112 - a malformed observation note shouldn't break the count
+                continue
+
+    inbox_count = 0
+    inbox_oldest_days: float | None = None
+    inbox_dir = vault / "inbox"
+    if inbox_dir.exists():
+        files = list(inbox_dir.glob("*.md"))
+        inbox_count = len(files)
+        if files:
+            oldest_mtime = min(f.stat().st_mtime for f in files)
+            inbox_oldest_days = (datetime.now().timestamp() - oldest_mtime) / 86400  # noqa: DTZ005 - comparing against a local mtime, not persisting
+
+    last_health_check = None
+    health_dir = vault / "ops" / "health"
+    if health_dir.exists():
+        reports = sorted(health_dir.glob("*-report.md"))
+        if reports:
+            last_health_check = reports[-1].name.removesuffix("-report.md")
+
+    return VaultHealth(
+        observations_pending=observations_pending,
+        inbox_count=inbox_count,
+        inbox_oldest_days=inbox_oldest_days,
+        last_health_check=last_health_check,
+    )
+
+
 def get_tension_summary(vault_path: str | Path) -> TensionSummary:
     """Never raises: an unreadable tensions dir or a bad note is skipped,
     not fatal, matching tension_triage_dashboard's own read-only stance."""
@@ -394,3 +446,42 @@ def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> Japan
         return JapaneseTutorSummary(reachable=True, cards_due=len(due), mastery=mastery)
     except Exception:  # noqa: BLE001 - the server simply not running is expected, not an error to surface
         return JapaneseTutorSummary(reachable=False)
+
+
+# ---------------------------------------------------------------------------
+# Frontmatter validation (personal-infra's frontmatter-validation-run script,
+# not yet on a schedule as of 2026-09-20 pending two real findings: the
+# validator's own Category-field check is case-sensitive against content
+# that's genuinely lowercase, and blog/posts/ turned out to be the wrong
+# target -- see BrainSync tool doc for frontmatter-validator)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FrontmatterValidationSummary:
+    available: bool
+    generated_at: str | None = None
+    total: int = 0
+    invalid_count: int = 0
+    invalid_files: list[dict] = field(default_factory=list)
+
+
+def get_frontmatter_validation(
+    snapshot_path: str | Path = "~/sync/local-first/frontmatter-validation-latest.json",
+) -> FrontmatterValidationSummary:
+    """Reads the snapshot frontmatter-validation-run writes -- never raises:
+    the job not having run yet (or ever) is a normal, expected state."""
+    try:
+        path = Path(snapshot_path).expanduser()
+        if not path.exists():
+            return FrontmatterValidationSummary(available=False)
+        data = json.loads(path.read_text())
+        return FrontmatterValidationSummary(
+            available=True,
+            generated_at=data.get("generated_at"),
+            total=data.get("total", 0),
+            invalid_count=data.get("invalid_count", 0),
+            invalid_files=data.get("invalid_files", [])[:10],
+        )
+    except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
+        return FrontmatterValidationSummary(available=False)

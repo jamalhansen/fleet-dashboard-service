@@ -1,3 +1,4 @@
+import json
 import plistlib
 from unittest.mock import MagicMock, patch
 
@@ -378,3 +379,84 @@ class TestGetJapaneseTutorSummary:
         assert result.reachable is True
         assert result.cards_due == 2
         assert result.mastery == [{"stage": "hiragana", "mastered": 5}]
+
+
+class TestGetVaultHealth:
+    def test_missing_vault_returns_zeroes(self, tmp_path):
+        result = core.get_vault_health(tmp_path / "does-not-exist")
+        assert result.observations_pending == 0
+        assert result.inbox_count == 0
+        assert result.inbox_oldest_days is None
+        assert result.last_health_check is None
+
+    def test_counts_only_pending_observations(self, tmp_path):
+        obs_dir = tmp_path / "ops" / "observations"
+        obs_dir.mkdir(parents=True)
+        (obs_dir / "o1.md").write_text("---\ntype: observation\nstatus: pending\n---\nbody")
+        (obs_dir / "o2.md").write_text("---\ntype: observation\nstatus: pending\n---\nbody")
+        (obs_dir / "o3.md").write_text("---\ntype: observation\nstatus: promoted\n---\nbody")
+        result = core.get_vault_health(tmp_path)
+        assert result.observations_pending == 2
+
+    def test_inbox_count_and_oldest_age(self, tmp_path):
+        import os
+        import time
+
+        inbox_dir = tmp_path / "inbox"
+        inbox_dir.mkdir()
+        old_file = inbox_dir / "old.md"
+        old_file.write_text("old")
+        two_days_ago = time.time() - (2 * 86400)
+        os.utime(old_file, (two_days_ago, two_days_ago))
+        (inbox_dir / "new.md").write_text("new")
+
+        result = core.get_vault_health(tmp_path)
+        assert result.inbox_count == 2
+        assert result.inbox_oldest_days >= 1.9
+
+    def test_last_health_check_is_most_recent_report(self, tmp_path):
+        health_dir = tmp_path / "ops" / "health"
+        health_dir.mkdir(parents=True)
+        (health_dir / "2026-08-01-report.md").write_text("old report")
+        (health_dir / "2026-09-06-report.md").write_text("newest report")
+        result = core.get_vault_health(tmp_path)
+        assert result.last_health_check == "2026-09-06"
+
+    def test_malformed_observation_note_is_skipped_not_fatal(self, tmp_path):
+        obs_dir = tmp_path / "ops" / "observations"
+        obs_dir.mkdir(parents=True)
+        (obs_dir / "broken.md").write_text("not valid frontmatter at all {{{")
+        (obs_dir / "good.md").write_text("---\nstatus: pending\n---\nbody")
+        result = core.get_vault_health(tmp_path)
+        assert result.observations_pending == 1
+
+
+class TestGetFrontmatterValidation:
+    def test_missing_snapshot_returns_unavailable(self, tmp_path):
+        result = core.get_frontmatter_validation(tmp_path / "nope.json")
+        assert result.available is False
+
+    def test_reads_real_snapshot(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(
+            '{"generated_at": "2026-09-20T12:00:00Z", "total": 10, "invalid_count": 2, '
+            '"invalid_files": [{"file": "a.md", "errors": ["x"]}, {"file": "b.md", "errors": ["y"]}]}'
+        )
+        result = core.get_frontmatter_validation(snapshot)
+        assert result.available is True
+        assert result.total == 10
+        assert result.invalid_count == 2
+        assert len(result.invalid_files) == 2
+
+    def test_invalid_files_truncated_to_ten(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [{"file": f"{i}.md", "errors": ["x"]} for i in range(25)]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 25, "invalid_count": 25, "invalid_files": files}))
+        result = core.get_frontmatter_validation(snapshot)
+        assert len(result.invalid_files) == 10
+
+    def test_malformed_snapshot_returns_unavailable_not_raises(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text("not valid json {{{")
+        result = core.get_frontmatter_validation(snapshot)
+        assert result.available is False

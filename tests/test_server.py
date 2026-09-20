@@ -85,6 +85,7 @@ def test_frontmatter_validation_endpoint_available():
         available=True, generated_at="2026-09-20T12:00:00Z", total=10, invalid_count=2,
         invalid_files=[{"file": "a.md", "errors": ["x"]}],
         error_summary=[{"error": "x", "count": 2, "files": ["a.md", "b.md"], "more": 0}],
+        content_todo=[{"key": "needs_status", "label": "Needs a status decision", "count": 1, "files": ["a.md"], "more": 0}],
     )
     with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):
         resp = client.get("/api/frontmatter-validation")
@@ -94,6 +95,7 @@ def test_frontmatter_validation_endpoint_available():
     assert body["invalid_count"] == 2
     assert body["invalid_files"] == [{"file": "a.md", "errors": ["x"]}]
     assert body["error_summary"] == [{"error": "x", "count": 2, "files": ["a.md", "b.md"], "more": 0}]
+    assert body["content_todo"] == [{"key": "needs_status", "label": "Needs a status decision", "count": 1, "files": ["a.md"], "more": 0}]
 
 
 def test_art_endpoint_no_art_available():

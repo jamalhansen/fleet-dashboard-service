@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import plistlib
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -438,12 +439,19 @@ class JapaneseTutorSummary:
 
 
 def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> JapaneseTutorSummary:
-    """Never raises: the server not being up is a normal, expected state."""
+    """Never raises: the server not being up is a normal, expected state.
+
+    Reads /api/cards/due/count, not len(/api/cards/due) -- found live
+    2026-09-20: the latter always returns up to a fixed limit (backfilled
+    with not-yet-due cards to keep a study session full), so its length
+    never reflects real review progress. The count endpoint is the true
+    number of cards overdue right now.
+    """
     try:
         with httpx.Client(timeout=3.0) as client:
-            due = client.get(f"{base_url}/api/cards/due").json()
+            due_count = client.get(f"{base_url}/api/cards/due/count").json().get("due_count", 0)
             mastery = client.get(f"{base_url}/api/mastery").json()
-        return JapaneseTutorSummary(reachable=True, cards_due=len(due), mastery=mastery)
+        return JapaneseTutorSummary(reachable=True, cards_due=due_count, mastery=mastery)
     except Exception:  # noqa: BLE001 - the server simply not running is expected, not an error to surface
         return JapaneseTutorSummary(reachable=False)
 
@@ -465,9 +473,43 @@ class FrontmatterValidationSummary:
     invalid_count: int = 0
     invalid_files: list[dict] = field(default_factory=list)
     error_summary: list[dict] = field(default_factory=list)
+    content_todo: list[dict] = field(default_factory=list)
 
 
 _ERROR_SUMMARY_FILES_CAP = 20  # per error type -- some real groups run 100+ files, showing all isn't "a summary"
+_TODO_BUCKET_FILES_CAP = 20
+
+# Ordered most-urgent first: a file already live with incomplete metadata
+# matters more than one that's still a draft. A file can land in more than
+# one bucket (e.g. missing both status and tags) -- these aren't mutually
+# exclusive categories, they're independent things that need doing.
+_TODO_BUCKETS: list[tuple[str, str, Callable[[str], bool]]] = [
+    (
+        "published_incomplete",
+        "Published but incomplete",
+        lambda err: "'status' is 'published'" in err,
+    ),
+    (
+        "needs_status",
+        "Needs a status decision",
+        lambda err: "Missing universal field: 'status'" in err,
+    ),
+    (
+        "needs_category",
+        "Needs a category decision",
+        lambda err: "Missing 'category' field" in err,
+    ),
+    (
+        "parse_error",
+        "Malformed YAML -- needs a manual fix",
+        lambda err: err.startswith("Failed to parse frontmatter"),
+    ),
+    (
+        "auto_fixable",
+        "Auto-fixable (tags/created)",
+        lambda err: "Missing universal field: 'tags'" in err or "Missing universal field: 'created'" in err,
+    ),
+]
 
 
 def get_frontmatter_validation(
@@ -505,6 +547,31 @@ def get_frontmatter_validation(
             for err, files in sorted(by_error.items(), key=lambda kv: len(kv[1]), reverse=True)
         ]
 
+        # Re-slice the same data by what kind of action it needs, not just
+        # raw error text -- "23 files need a status decision" is something
+        # to go do, "Missing universal field: 'status'" is just a string. A
+        # file lands in every bucket its errors match (not mutually exclusive:
+        # a file can need both a status decision and a tags/created auto-fill).
+        bucket_files: dict[str, list[str]] = {key: [] for key, _, _ in _TODO_BUCKETS}
+        for entry in all_invalid:
+            errors = entry.get("errors", [])
+            file_name = entry.get("file", "")
+            for key, _, matches in _TODO_BUCKETS:
+                if any(matches(err) for err in errors):
+                    bucket_files[key].append(file_name)
+
+        content_todo = [
+            {
+                "key": key,
+                "label": label,
+                "count": len(bucket_files[key]),
+                "files": bucket_files[key][:_TODO_BUCKET_FILES_CAP],
+                "more": max(0, len(bucket_files[key]) - _TODO_BUCKET_FILES_CAP),
+            }
+            for key, label, _ in _TODO_BUCKETS
+            if bucket_files[key]
+        ]
+
         return FrontmatterValidationSummary(
             available=True,
             generated_at=data.get("generated_at"),
@@ -512,6 +579,7 @@ def get_frontmatter_validation(
             invalid_count=data.get("invalid_count", 0),
             invalid_files=all_invalid[:10],
             error_summary=error_summary,
+            content_todo=content_todo,
         )
     except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
         return FrontmatterValidationSummary(available=False)

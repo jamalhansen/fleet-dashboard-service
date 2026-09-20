@@ -363,8 +363,11 @@ class TestGetJapaneseTutorSummary:
         assert result.cards_due == 0
 
     def test_reachable_server_parses_response(self):
+        """Regression 2026-09-20: this used to read len(/api/cards/due),
+        which always returns a fixed-size, backfilled list regardless of
+        real review progress. Must read /api/cards/due/count instead."""
         due_resp = MagicMock()
-        due_resp.json.return_value = [{"card_id": 1}, {"card_id": 2}]
+        due_resp.json.return_value = {"due_count": 3}
         mastery_resp = MagicMock()
         mastery_resp.json.return_value = [{"stage": "hiragana", "mastered": 5}]
 
@@ -377,8 +380,9 @@ class TestGetJapaneseTutorSummary:
             result = core.get_japanese_tutor_summary()
 
         assert result.reachable is True
-        assert result.cards_due == 2
+        assert result.cards_due == 3
         assert result.mastery == [{"stage": "hiragana", "mastered": 5}]
+        fake_client.get.assert_any_call("http://127.0.0.1:8421/api/cards/due/count")
 
 
 class TestGetVaultHealth:
@@ -525,3 +529,58 @@ class TestGetFrontmatterValidation:
 
         errors = {e["error"] for e in result.error_summary}
         assert errors == {"error one", "error two"}
+
+    def test_content_todo_buckets_files_by_action_needed(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [
+            {"file": "a.md", "errors": ["Missing universal field: 'tags'"]},
+            {"file": "b.md", "errors": ["Missing universal field: 'status'"]},
+            {"file": "c.md", "errors": ["Missing 'category' field"]},
+            {"file": "d.md", "errors": ["Field 'canonical_url' is required when 'status' is 'published'"]},
+            {"file": "e.md", "errors": ["Failed to parse frontmatter: bad yaml"]},
+        ]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 5, "invalid_count": 5, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        by_key = {b["key"]: b for b in result.content_todo}
+        assert by_key["auto_fixable"]["files"] == ["a.md"]
+        assert by_key["needs_status"]["files"] == ["b.md"]
+        assert by_key["needs_category"]["files"] == ["c.md"]
+        assert by_key["published_incomplete"]["files"] == ["d.md"]
+        assert by_key["parse_error"]["files"] == ["e.md"]
+
+    def test_content_todo_most_urgent_bucket_listed_first(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [
+            {"file": "a.md", "errors": ["Missing universal field: 'tags'"]},
+            {"file": "b.md", "errors": ["Field 'canonical_url' is required when 'status' is 'published'"]},
+        ]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 2, "invalid_count": 2, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        assert result.content_todo[0]["key"] == "published_incomplete"
+
+    def test_content_todo_a_file_can_land_in_more_than_one_bucket(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [
+            {"file": "a.md", "errors": ["Missing universal field: 'tags'", "Missing universal field: 'status'"]},
+        ]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 1, "invalid_count": 1, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        by_key = {b["key"]: b for b in result.content_todo}
+        assert by_key["auto_fixable"]["files"] == ["a.md"]
+        assert by_key["needs_status"]["files"] == ["a.md"]
+
+    def test_content_todo_empty_buckets_are_omitted(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        files = [{"file": "a.md", "errors": ["Missing universal field: 'tags'"]}]
+        snapshot.write_text(json.dumps({"generated_at": "x", "total": 1, "invalid_count": 1, "invalid_files": files}))
+
+        result = core.get_frontmatter_validation(snapshot)
+
+        keys = {b["key"] for b in result.content_todo}
+        assert keys == {"auto_fixable"}

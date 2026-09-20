@@ -115,30 +115,36 @@ class ProviderUsage:
 
 
 _MODEL_USAGE_QUERY = """
-    SELECT tool_name, model,
+    SELECT tool_name, model, provider,
            COUNT(*) AS total, SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS failures
     FROM processing_log
     WHERE created_at > ?
-    GROUP BY tool_name, model
+    GROUP BY tool_name, model, provider
 """
 
-# processing_log has no provider column -- `model` is the only signal recorded
-# (see local_first_common.tracking). Classification below is a best-effort
-# heuristic against real strings observed in production (2026-09-20:
-# "ollama:phi4-mini", "anthropic:claude-haiku-4-5-20251001", bare "phi4-mini",
-# "claude-sonnet-5", "deepseek-chat", "llama-3.3-70b-versatile", test leakage
-# like MagicMock reprs) -- not an authoritative source. A model string that
-# doesn't match any known pattern defaults to "ollama", since every uncataloged
-# local model tag observed so far (qwen2.5:7b, gemma4:latest, llava:7b, ...)
-# is one.
+# processing_log has carried a real `provider` column since 2026-09-20
+# (local_first_common.tracking's log_run(provider=...)), populated for
+# gateway-routed calls (the dominant path -- llm-gateway-service already
+# knows its caller-requested provider for free) and any direct provider
+# whose class now declares provider_name. Older rows, and any call site that
+# hasn't been updated to pass provider=, still have it NULL -- classify_provider()
+# below is the fallback heuristic for exactly those, against real strings
+# observed in production before the column existed ("ollama:phi4-mini",
+# "anthropic:claude-haiku-4-5-20251001", bare "phi4-mini", "claude-sonnet-5",
+# "deepseek-chat", "llama-3.3-70b-versatile", test leakage like MagicMock
+# reprs) -- not authoritative, just a best guess for legacy rows. A model
+# string that doesn't match any known pattern defaults to "ollama", since
+# every uncataloged local model tag observed so far (qwen2.5:7b,
+# gemma4:latest, llava:7b, ...) is one.
 _KNOWN_PROVIDER_PREFIXES = {"ollama", "local", "anthropic", "gemini", "groq", "deepseek", "mock"}
 _KNOWN_GROQ_MODELS = {"llama-3.3-70b-versatile"}
 
 
 def classify_provider(model: str | None) -> tuple[str, str]:
     """Best-effort (provider, display_model) from a raw processing_log.model
-    string. See the module comment above _MODEL_USAGE_QUERY for why this is a
-    heuristic, not a lookup against real data."""
+    string, for rows with no real `provider` column value. See the module
+    comment above _MODEL_USAGE_QUERY for why this is a fallback heuristic,
+    not a lookup against real data."""
     if not model:
         return "(unset)", "(unset)"
     if ":" in model:
@@ -189,8 +195,11 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
         return []
 
     merged: dict[tuple[str, str, str], ModelUsage] = {}
-    for tool_name, raw_model, total, failures in rows:
-        provider, model = classify_provider(raw_model)
+    for tool_name, raw_model, real_provider, total, failures in rows:
+        if real_provider:
+            provider, model = real_provider, (raw_model or "(unset)")
+        else:
+            provider, model = classify_provider(raw_model)
         key = (tool_name, provider, model)
         entry = merged.setdefault(key, ModelUsage(tool_name=tool_name, model=model, provider=provider, total=0, failures=0))
         entry.total += total

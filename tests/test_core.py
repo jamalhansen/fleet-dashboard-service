@@ -132,7 +132,7 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         # A FallbackProvider failure (primary's real model, success=False) and the
@@ -162,7 +162,7 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute("INSERT INTO processing_log (tool_name, model, success) VALUES ('some-tool', NULL, true)")
@@ -180,7 +180,7 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute(
@@ -201,12 +201,39 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.close()
         with patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")):
             assert core.get_model_usage() == []
+
+    def test_real_provider_column_takes_priority_over_heuristic(self, tmp_path, monkeypatch):
+        """local_first_common now writes a real provider column for
+        gateway-routed calls (2026-09-20) -- when it's populated, use it
+        directly instead of guessing from the model string. A bare
+        "phi4-mini" with no real provider recorded would otherwise guess
+        "ollama" correctly by luck; this proves it's reading the real column,
+        not just getting lucky, by using a model name the heuristic would
+        get wrong on its own."""
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, provider, success) VALUES "
+            "('my-tool', 'a-custom-finetune', 'groq', true)"
+        )
+        conn.close()
+
+        usage = core.get_model_usage()
+        assert usage[0].provider == "groq"
+        assert usage[0].model == "a-custom-finetune"
+        # the heuristic alone would have guessed "ollama" for this model string
+        assert core.classify_provider("a-custom-finetune")[0] == "ollama"
 
 
 class TestClassifyProvider:
@@ -250,7 +277,7 @@ class TestGetProviderUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, success BOOLEAN, "
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute(

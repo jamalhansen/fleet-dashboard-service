@@ -335,7 +335,12 @@
 </main>
 
 <script>
-const JAPANESE_TUTOR_UI_URL = "http://127.0.0.1:8421";
+// Same host the dashboard itself was loaded from, different port -- a
+// hardcoded 127.0.0.1 breaks this link when viewing the dashboard from
+// another device on the LAN (e.g. a phone hitting the Mac's LAN IP): the
+// browser would try to open 127.0.0.1 on the phone itself, which has
+// nothing listening on that port.
+const JAPANESE_TUTOR_UI_URL = `http://${window.location.hostname}:8421`;
 
 function pillFor(rate, total) {
   if (total === 0) return '<span class="pill neutral"><span class="dot"></span>no calls</span>';

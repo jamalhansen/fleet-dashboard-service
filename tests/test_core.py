@@ -263,6 +263,7 @@ class TestGetModelUsage:
         assert len(usage) == 1
         assert usage[0].total == 1
         assert usage[0].provider == "ollama"
+        assert usage[0].via_gateway is True
 
     def test_non_gateway_null_provider_row_still_counted(self, tmp_path, monkeypatch):
         """A tool that never routes through the gateway (or a legacy row from
@@ -284,6 +285,30 @@ class TestGetModelUsage:
         usage = core.get_model_usage()
         assert len(usage) == 1
         assert usage[0].total == 1
+        assert usage[0].via_gateway is False
+
+    def test_via_gateway_surfaced_for_a_tool_that_never_uses_the_gateway(self, tmp_path, monkeypatch):
+        """Jamal 2026-09-21: the dashboard showed nothing distinguishing a
+        gateway-routed call from a direct one (e.g. persona-counsel/pebble,
+        which write processing_log themselves and never touch the gateway).
+        ModelUsage.via_gateway is what the frontend's Routing column reads."""
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, provider, via_gateway, success) VALUES "
+            "('pebble', 'qwen2.5:3b', NULL, NULL, true)"
+        )
+        conn.close()
+
+        usage = core.get_model_usage()
+        assert len(usage) == 1
+        assert usage[0].tool_name == "pebble"
+        assert usage[0].via_gateway is False
 
     def test_real_provider_column_takes_priority_over_heuristic(self, tmp_path, monkeypatch):
         """local_first_common now writes a real provider column for

@@ -71,6 +71,7 @@ def api_models(lookback_hours: float = 24 * 7):
                 "total": u.total,
                 "failures": u.failures,
                 "failure_rate": round(u.failure_rate, 4),
+                "via_gateway": u.via_gateway,
             }
             for u in usage
         ],

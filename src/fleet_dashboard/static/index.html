@@ -304,13 +304,14 @@
           <thead>
             <tr>
               <th>Tool</th>
+              <th>Type</th>
               <th class="num">Calls</th>
               <th class="num">Failures</th>
               <th class="num">Failure&nbsp;rate</th>
               <th>Last call</th>
             </tr>
           </thead>
-          <tbody id="activity-body"><tr><td colspan="5" class="skeleton">Loading&hellip;</td></tr></tbody>
+          <tbody id="activity-body"><tr><td colspan="6" class="skeleton">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -334,12 +335,13 @@
               <th>Tool</th>
               <th>Provider</th>
               <th>Model</th>
+              <th>Routing</th>
               <th class="num">Calls</th>
               <th class="num">Failures</th>
               <th class="num">Failure&nbsp;rate</th>
             </tr>
           </thead>
-          <tbody id="models-body"><tr><td colspan="6" class="skeleton">Loading&hellip;</td></tr></tbody>
+          <tbody id="models-body"><tr><td colspan="7" class="skeleton">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -401,6 +403,21 @@ function pillFor(rate, total) {
   return '<span class="pill bad"><span class="dot"></span>' + (rate * 100).toFixed(1) + '%</span>';
 }
 
+// Whether this (tool, provider, model) row's calls were routed through
+// llm-gateway-service or made directly (persona-counsel/pebble/pedantic-troll
+// style, via pydantic-ai or a provider instantiated outside resolve_provider()).
+function routingPill(viaGateway) {
+  return viaGateway
+    ? '<span class="pill good"><span class="dot"></span>gateway</span>'
+    : '<span class="pill neutral"><span class="dot"></span>direct</span>';
+}
+
+const SOURCE_TABLE_LABELS = { processing_log: 'LLM', fetch_log: 'fetch', api_call_log: 'API' };
+function sourceLabel(tables) {
+  if (!tables || !tables.length) return '—';
+  return tables.map(t => SOURCE_TABLE_LABELS[t] || t).join(' + ');
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso.replace(' ', 'T') + (iso.includes('Z') ? '' : 'Z'));
@@ -425,11 +442,12 @@ async function loadFleet() {
     const data = await res.json();
     win.textContent = `(${lookbackLabel()})`;
     if (!data.activity.length) {
-      body.innerHTML = '<tr><td colspan="5" class="empty-state">No activity in this window.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty-state">No activity in this window.</td></tr>';
     } else {
       body.innerHTML = data.activity.map(a => `
         <tr>
           <td>${a.tool_name}</td>
+          <td>${sourceLabel(a.tables)}</td>
           <td class="num">${a.total}</td>
           <td class="num">${a.failures}</td>
           <td class="num">${pillFor(a.failure_rate, a.total)}</td>
@@ -476,7 +494,7 @@ async function loadModels() {
     }
 
     if (!data.usage.length) {
-      body.innerHTML = '<tr><td colspan="6" class="empty-state">No model calls logged in this window.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" class="empty-state">No model calls logged in this window.</td></tr>';
       return;
     }
     body.innerHTML = data.usage.map(u => `
@@ -484,6 +502,7 @@ async function loadModels() {
         <td>${u.tool_name}</td>
         <td>${u.provider}</td>
         <td>${u.model}</td>
+        <td>${routingPill(u.via_gateway)}</td>
         <td class="num">${u.total}</td>
         <td class="num">${u.failures}</td>
         <td class="num">${pillFor(u.failure_rate, u.total)}</td>

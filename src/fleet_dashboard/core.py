@@ -102,6 +102,7 @@ class ModelUsage:
     provider: str
     total: int
     failures: int
+    via_gateway: bool = False
 
     @property
     def failure_rate(self) -> float:
@@ -224,6 +225,7 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
         entry = merged.setdefault(key, ModelUsage(tool_name=tool_name, model=model, provider=provider, total=0, failures=0))
         entry.total += total
         entry.failures += failures or 0
+        entry.via_gateway = entry.via_gateway or bool(via_gateway)
 
     return sorted(merged.values(), key=lambda u: u.total, reverse=True)
 

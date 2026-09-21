@@ -23,7 +23,7 @@ def test_fleet_endpoint_shape():
 
 def test_models_endpoint_shape():
     usage = [
-        core.ModelUsage(tool_name="japanese-tutor", model="phi4-mini", provider="ollama", total=8, failures=2),
+        core.ModelUsage(tool_name="japanese-tutor", model="phi4-mini", provider="ollama", total=8, failures=2, via_gateway=True),
         core.ModelUsage(tool_name="japanese-tutor", model="deepseek-chat", provider="deepseek", total=2, failures=0),
     ]
     by_provider = [
@@ -39,7 +39,9 @@ def test_models_endpoint_shape():
     assert body["usage"][0]["provider"] == "ollama"
     assert body["usage"][0]["model"] == "phi4-mini"
     assert body["usage"][0]["failure_rate"] == 0.25
+    assert body["usage"][0]["via_gateway"] is True
     assert body["usage"][1]["model"] == "deepseek-chat"
+    assert body["usage"][1]["via_gateway"] is False
     assert body["by_provider"][0]["provider"] == "ollama"
     assert body["by_provider"][0]["tool_count"] == 1
     assert body["by_provider"][1]["provider"] == "deepseek"

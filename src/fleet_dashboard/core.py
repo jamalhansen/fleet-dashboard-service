@@ -23,11 +23,16 @@ LOCALFIRST_PREFIXES = ("com.localfirst.", "com.jamalhansen.")
 # ---------------------------------------------------------------------------
 
 _STATS_QUERIES: dict[str, str] = {
+    # via_gateway IS NOT TRUE excludes llm-gateway-service's own echo of a
+    # gateway-routed call -- the calling tool's own timed_run() row already
+    # counts that call once; counting both doubles every gateway-routed
+    # tool's total (confirmed live 2026-09-20: obsidian-vault-auto-tagger's
+    # real ~81 calls showed as ~152).
     "processing_log": """
         SELECT tool_name, COUNT(*) AS total,
                SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS failures,
                MAX(created_at) AS last_call
-        FROM processing_log WHERE created_at > ? GROUP BY tool_name
+        FROM processing_log WHERE created_at > ? AND via_gateway IS NOT TRUE GROUP BY tool_name
     """,
     "fetch_log": """
         SELECT t.name AS tool_name, COUNT(*) AS total,
@@ -117,11 +122,11 @@ class ProviderUsage:
 
 
 _MODEL_USAGE_QUERY = """
-    SELECT tool_name, model, provider,
+    SELECT tool_name, model, provider, via_gateway,
            COUNT(*) AS total, SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS failures
     FROM processing_log
     WHERE created_at > ?
-    GROUP BY tool_name, model, provider
+    GROUP BY tool_name, model, provider, via_gateway
 """
 
 # processing_log has carried a real `provider` column since 2026-09-20
@@ -196,8 +201,21 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
     except Exception:  # noqa: BLE001 - best-effort read against a DB other tools may be writing to concurrently
         return []
 
+    # A gateway-routed call produces two rows for the same logical call: the
+    # calling tool's own timed_run() row (provider usually NULL) and
+    # llm-gateway-service's own row for the same request (via_gateway=True,
+    # provider populated for real). There's no shared id to pair them up
+    # directly, but every (tool_name, model) pair that has a via_gateway row
+    # is -- in this fleet, where LLM_GATEWAY_URL is set globally -- exactly
+    # a pair where the NULL-provider rows are that same pair's redundant
+    # client-side echoes, not independent calls. Drop those so the gateway's
+    # one accurate row does the counting instead of doubling it.
+    gateway_pairs = {(tool_name, raw_model) for tool_name, raw_model, _, via_gateway, _, _ in rows if via_gateway}
+
     merged: dict[tuple[str, str, str], ModelUsage] = {}
-    for tool_name, raw_model, real_provider, total, failures in rows:
+    for tool_name, raw_model, real_provider, via_gateway, total, failures in rows:
+        if not via_gateway and real_provider is None and (tool_name, raw_model) in gateway_pairs:
+            continue
         if real_provider:
             provider, model = real_provider, (raw_model or "(unset)")
         else:
@@ -645,7 +663,12 @@ def get_repo_health(
             tests = r.get("tests", {})
             git = r.get("git", {})
             hooks = r.get("hooks", {})
-            ok = bool(lint.get("ok")) and bool(tests.get("ok")) and bool(hooks.get("ok"))
+            ok = (
+                bool(lint.get("ok"))
+                and bool(tests.get("ok"))
+                and bool(hooks.get("ok"))
+                and bool(git.get("has_remote", True))
+            )
             repos.append(
                 {
                     "name": name,
@@ -658,6 +681,7 @@ def get_repo_health(
                     "hooks_ok": hooks.get("ok", True),
                     "dirty": git.get("dirty", False),
                     "unpushed": git.get("unpushed", 0),
+                    "has_remote": git.get("has_remote", True),
                 }
             )
         repos.sort(key=lambda r: (r["ok"], r["name"]))

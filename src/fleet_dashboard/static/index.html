@@ -556,6 +556,7 @@ async function loadRepoHealth() {
       if (!r.lint_ok) flags.push(`<span class="pill warn"><span class="dot"></span>${r.lint_errors} lint</span>`);
       if (!r.tests_ok) flags.push(`<span class="pill warn"><span class="dot"></span>${r.tests_failed} test fail</span>`);
       if (!r.hooks_ok) flags.push(`<span class="pill warn"><span class="dot"></span>hooks outdated</span>`);
+      if (!r.has_remote) flags.push(`<span class="pill warn"><span class="dot"></span>no remote</span>`);
       if (r.dirty) flags.push(`<span class="pill"><span class="dot"></span>dirty</span>`);
       if (r.unpushed > 0) flags.push(`<span class="pill"><span class="dot"></span>${r.unpushed} unpushed</span>`);
       const status = r.ok

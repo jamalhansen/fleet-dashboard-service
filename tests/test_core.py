@@ -12,7 +12,7 @@ def _seed_db(db_path, processing_rows=(), fetch_rows=(), api_call_rows=()):
     try:
         conn.execute(
             "CREATE TABLE processing_log (tool_name VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "via_gateway BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute("CREATE TABLE tools (id INTEGER, name VARCHAR)")
         conn.execute(
@@ -66,14 +66,18 @@ class TestGetFleetActivity:
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
-        conn.execute("CREATE TABLE processing_log (tool_name VARCHAR, success BOOLEAN, created_at TIMESTAMP)")
+        conn.execute("CREATE TABLE processing_log (tool_name VARCHAR, success BOOLEAN, via_gateway BOOLEAN, created_at TIMESTAMP)")
         conn.execute("CREATE TABLE tools (id INTEGER, name VARCHAR)")
         conn.execute("CREATE TABLE fetch_log (tool_id INTEGER, success BOOLEAN, attempted_at TIMESTAMP)")
         conn.execute("CREATE TABLE api_call_log (tool_id INTEGER, success BOOLEAN, attempted_at TIMESTAMP)")
         conn.execute(
-            "INSERT INTO processing_log VALUES ('older-tool', true, CURRENT_TIMESTAMP - INTERVAL 1 HOUR)"
+            "INSERT INTO processing_log (tool_name, success, created_at) "
+            "VALUES ('older-tool', true, CURRENT_TIMESTAMP - INTERVAL 1 HOUR)"
         )
-        conn.execute("INSERT INTO processing_log VALUES ('newer-tool', true, CURRENT_TIMESTAMP)")
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, success, created_at) "
+            "VALUES ('newer-tool', true, CURRENT_TIMESTAMP)"
+        )
         conn.close()
         activity = core.get_fleet_activity()
         assert [a.tool_name for a in activity] == ["newer-tool", "older-tool"]
@@ -84,6 +88,31 @@ class TestGetFleetActivity:
         _seed_db(db, processing_rows=[("my-tool", True)])
         with patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")):
             assert core.get_fleet_activity() == []
+
+    def test_gateway_echo_row_excluded_from_total(self, tmp_path, monkeypatch):
+        """Regression 2026-09-20: llm-gateway-service's own row for a
+        gateway-routed call (via_gateway=True) is a second record of the
+        same call the tool's own row already counted -- summing both
+        doubled every gateway-routed tool's call total."""
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, success BOOLEAN, "
+            "via_gateway BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute("CREATE TABLE tools (id INTEGER, name VARCHAR)")
+        conn.execute("CREATE TABLE fetch_log (tool_id INTEGER, success BOOLEAN, attempted_at TIMESTAMP)")
+        conn.execute("CREATE TABLE api_call_log (tool_id INTEGER, success BOOLEAN, attempted_at TIMESTAMP)")
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, success, via_gateway) VALUES "
+            "('my-tool', true, NULL), ('my-tool', true, true)"
+        )
+        conn.close()
+
+        activity = core.get_fleet_activity()
+        assert len(activity) == 1
+        assert activity[0].total == 1
 
 
 class TestGetLaunchAgents:
@@ -133,8 +162,8 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         # A FallbackProvider failure (primary's real model, success=False) and the
         # fallback's own successful row land as two distinct (tool, model) pairs --
@@ -163,8 +192,8 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute("INSERT INTO processing_log (tool_name, model, success) VALUES ('some-tool', NULL, true)")
         conn.close()
@@ -181,8 +210,8 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute(
             "INSERT INTO processing_log (tool_name, model, success) VALUES "
@@ -202,12 +231,59 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.close()
         with patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")):
             assert core.get_model_usage() == []
+
+    def test_gateway_routed_call_is_not_double_counted(self, tmp_path, monkeypatch):
+        """Regression 2026-09-20: a gateway-routed call produces two rows --
+        the calling tool's own timed_run() row (provider usually NULL) and
+        llm-gateway-service's own row for the same request (via_gateway=True,
+        provider populated for real) -- and both used to land in the same
+        guessed bucket, doubling the count. Real numbers: obsidian-vault-
+        auto-tagger's true ~81 qwen2.5:7b calls showed as ~152."""
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, provider, via_gateway, success) VALUES "
+            "('obsidian-vault-auto-tagger', 'qwen2.5:7b', NULL, NULL, true), "
+            "('obsidian-vault-auto-tagger', 'qwen2.5:7b', 'ollama', true, true)"
+        )
+        conn.close()
+
+        usage = core.get_model_usage()
+        assert len(usage) == 1
+        assert usage[0].total == 1
+        assert usage[0].provider == "ollama"
+
+    def test_non_gateway_null_provider_row_still_counted(self, tmp_path, monkeypatch):
+        """A tool that never routes through the gateway (or a legacy row from
+        before the provider column existed) has no via_gateway row to defer
+        to -- its NULL-provider rows must still be counted via the
+        classify_provider() heuristic, not silently dropped."""
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, success) VALUES ('old-tool', 'phi4-mini', true)"
+        )
+        conn.close()
+
+        usage = core.get_model_usage()
+        assert len(usage) == 1
+        assert usage[0].total == 1
 
     def test_real_provider_column_takes_priority_over_heuristic(self, tmp_path, monkeypatch):
         """local_first_common now writes a real provider column for
@@ -221,8 +297,8 @@ class TestGetModelUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute(
             "INSERT INTO processing_log (tool_name, model, provider, success) VALUES "
@@ -278,8 +354,8 @@ class TestGetProviderUsage:
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
         conn.execute(
-            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, success BOOLEAN, "
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.execute(
             "INSERT INTO processing_log (tool_name, model, success) VALUES "
@@ -504,6 +580,28 @@ class TestGetRepoHealth:
         snapshot.write_text("not valid json {{{")
         result = core.get_repo_health(snapshot)
         assert result.available is False
+
+    def test_no_remote_counts_as_unhealthy(self, tmp_path):
+        """Jamal: no remote should be called out on the dashboard -- a repo
+        with no remote is unbacked, at risk of being lost, regardless of
+        how clean its lint/tests/hooks are."""
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({
+            "generated_at": "x",
+            "total": 1,
+            "healthy": 0,
+            "repos": {
+                "local-only-repo": {
+                    "lint": {"ok": True, "error_count": 0},
+                    "tests": {"ok": True, "passed": 5, "failed": 0},
+                    "git": {"dirty": False, "unpushed": 0, "has_remote": False},
+                    "hooks": {"ok": True, "installed": True},
+                },
+            },
+        }))
+        result = core.get_repo_health(snapshot)
+        assert result.repos[0]["ok"] is False
+        assert result.repos[0]["has_remote"] is False
 
 
 class TestGetFrontmatterValidation:

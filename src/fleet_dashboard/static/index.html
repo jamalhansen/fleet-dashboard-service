@@ -465,7 +465,13 @@ async function loadFetches() {
       body.innerHTML = '<tr><td colspan="7" class="empty-state">No fetches in this window.</td></tr>';
       return;
     }
-    body.innerHTML = data.usage.map(u => `
+    // Sorted by total descending already -- a long tail of one-off domains
+    // (Jamal 2026-09-22: "excessive") isn't worth a row each; show the
+    // heavy hitters and roll the rest into one summary line.
+    const TOP_N = 10;
+    const shown = data.usage.slice(0, TOP_N);
+    const rest = data.usage.slice(TOP_N);
+    let rowsHtml = shown.map(u => `
       <tr>
         <td>${u.tool_name}</td>
         <td>${u.domain}</td>
@@ -475,6 +481,11 @@ async function loadFetches() {
         <td class="num">${u.avg_duration_ms != null ? u.avg_duration_ms + 'ms' : '—'}</td>
         <td>${fmtTime(u.last_call)}</td>
       </tr>`).join('');
+    if (rest.length) {
+      const restCalls = rest.reduce((sum, u) => sum + u.total, 0);
+      rowsHtml += `<tr><td colspan="7" class="empty-state">+${rest.length} more domain${rest.length === 1 ? '' : 's'} (${restCalls} more calls)</td></tr>`;
+    }
+    body.innerHTML = rowsHtml;
   } catch (e) {
     body.innerHTML = '<tr><td colspan="7" class="empty-state">Could not reach the dashboard API.</td></tr>';
   }

@@ -256,6 +256,110 @@ def get_provider_usage(lookback_hours: float = 24 * 7) -> list[ProviderUsage]:
     return sorted(usage, key=lambda p: p.total, reverse=True)
 
 
+@dataclass
+class FetchUsage:
+    tool_name: str
+    domain: str
+    total: int
+    failures: int
+    avg_duration_ms: float | None = None
+    last_call: str | None = None
+
+    @property
+    def failure_rate(self) -> float:
+        return self.failures / self.total if self.total else 0.0
+
+
+_FETCH_USAGE_QUERY = """
+    SELECT t.name AS tool_name, fl.domain AS domain,
+           COUNT(*) AS total, SUM(CASE WHEN NOT fl.success THEN 1 ELSE 0 END) AS failures,
+           AVG(fl.duration_ms) AS avg_duration_ms, MAX(fl.attempted_at) AS last_call
+    FROM fetch_log fl JOIN tools t ON fl.tool_id = t.id
+    WHERE fl.attempted_at > ?
+    GROUP BY t.name, fl.domain
+"""
+
+
+def get_fetch_usage(lookback_hours: float = 24 * 7) -> list[FetchUsage]:
+    """Jamal 2026-09-21: raw HTTP fetches (not LLM calls) read as "49 calls"
+    on the old merged Tool Activity total with nothing to tell them apart --
+    this is the detail that was missing: per (tool, domain), so "49" becomes
+    "12 to arxiv.org, 30 to substackcdn.com, ...". Never raises: a lock
+    conflict or missing DB yields []."""
+    db_path = get_tracking_db_path()
+    if not db_path.exists():
+        return []
+    cutoff = datetime.now() - timedelta(hours=lookback_hours)  # noqa: DTZ005 - must stay naive to match fetch_log's naive attempted_at column
+    try:
+        import duckdb
+
+        conn = duckdb.connect(str(db_path), read_only=True)
+        try:
+            rows = conn.execute(_FETCH_USAGE_QUERY, [cutoff]).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - best-effort read against a DB other tools may be writing to concurrently
+        return []
+
+    usage = [
+        FetchUsage(tool_name=tool_name, domain=domain or "(unknown)", total=total, failures=failures or 0, avg_duration_ms=avg_duration_ms, last_call=str(last_call) if last_call else None)
+        for tool_name, domain, total, failures, avg_duration_ms, last_call in rows
+    ]
+    return sorted(usage, key=lambda u: u.total, reverse=True)
+
+
+@dataclass
+class ApiCallUsage:
+    tool_name: str
+    service: str
+    operation: str
+    total: int
+    failures: int
+    last_call: str | None = None
+
+    @property
+    def failure_rate(self) -> float:
+        return self.failures / self.total if self.total else 0.0
+
+
+_API_CALL_USAGE_QUERY = """
+    SELECT t.name AS tool_name, acl.service AS service, acl.operation AS operation,
+           COUNT(*) AS total, SUM(CASE WHEN NOT acl.success THEN 1 ELSE 0 END) AS failures,
+           MAX(acl.attempted_at) AS last_call
+    FROM api_call_log acl JOIN tools t ON acl.tool_id = t.id
+    WHERE acl.attempted_at > ?
+    GROUP BY t.name, acl.service, acl.operation
+"""
+
+
+def get_api_call_usage(lookback_hours: float = 24 * 7) -> list[ApiCallUsage]:
+    """Per (tool, service, operation) call counts -- the third kind of
+    external call a tool can make, distinct from an LLM completion or a
+    generic URL fetch: a call to a specific third-party service's own API
+    (Readwise, Mastodon, Bluesky). Never raises: a lock conflict or missing
+    DB yields []."""
+    db_path = get_tracking_db_path()
+    if not db_path.exists():
+        return []
+    cutoff = datetime.now() - timedelta(hours=lookback_hours)  # noqa: DTZ005 - must stay naive to match api_call_log's naive attempted_at column
+    try:
+        import duckdb
+
+        conn = duckdb.connect(str(db_path), read_only=True)
+        try:
+            rows = conn.execute(_API_CALL_USAGE_QUERY, [cutoff]).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - best-effort read against a DB other tools may be writing to concurrently
+        return []
+
+    usage = [
+        ApiCallUsage(tool_name=tool_name, service=service, operation=operation, total=total, failures=failures or 0, last_call=str(last_call) if last_call else None)
+        for tool_name, service, operation, total, failures, last_call in rows
+    ]
+    return sorted(usage, key=lambda u: u.total, reverse=True)
+
+
 def _launch_agents_dir() -> Path:
     return Path.home() / "Library" / "LaunchAgents"
 
@@ -702,7 +806,7 @@ def get_repo_health(
 @dataclass
 class GatewayRoutingEntry:
     tool_name: str
-    category: str  # "gateway" | "direct_pydantic_ai" | "direct_unclassified" | "none"
+    category: str  # "gateway" | "direct_pydantic_ai" | "direct_forced" | "direct_unclassified" | "none"
     status: str  # "ok" | "unconfirmed" | "review" | "expected_direct" | "no_llm_calls"
     last_call: str | None = None
 
@@ -733,13 +837,17 @@ def get_gateway_routing_audit(
     - "unconfirmed": source calls resolve_provider() but no via_gateway row
       shows up -- either it hasn't run recently, or something's wrong
       (LLM_GATEWAY_URL unset, gateway down when it last ran).
-    - "review": constructs a provider directly with no documented reason
-      (pebble is the first found, 2026-09-21) -- gets none of the gateway's
-      fallback/cost/reliability tracking; a real migration candidate.
-    - "expected_direct": pydantic-ai Agent(retries=N) for auto-retry on
-      invalid structured output, a capability resolve_provider() doesn't
-      have (persona-counsel, marketing-persona-counsel, pedantic-troll) --
-      deliberate, not a gap.
+    - "review": constructs a provider directly with no documented reason --
+      gets none of the gateway's fallback/cost/reliability tracking; a real
+      migration candidate.
+    - "expected_direct": either pydantic-ai Agent(retries=N) for auto-retry
+      on invalid structured output, a capability resolve_provider() doesn't
+      have (persona-counsel, marketing-persona-counsel, pedantic-troll), or
+      resolve_provider(..., use_gateway=False) for a deliberate, documented
+      reason (pebble, 2026-09-22: baby photos/journal text must stay local,
+      and the gateway's own internal resolve_provider() call always defaults
+      to fallback=True with no way to override it). Either way: deliberate,
+      not a gap.
     - "no_llm_calls": no .complete()/.acomplete() found in source.
 
     Never raises: a missing/malformed snapshot or unreachable tracking DB
@@ -764,7 +872,7 @@ def get_gateway_routing_audit(
             status = "ok" if name in confirmed_gateway else "unconfirmed"
         elif category == "direct_unclassified":
             status = "review"
-        elif category == "direct_pydantic_ai":
+        elif category in ("direct_pydantic_ai", "direct_forced"):
             status = "expected_direct"
         else:
             status = "no_llm_calls"

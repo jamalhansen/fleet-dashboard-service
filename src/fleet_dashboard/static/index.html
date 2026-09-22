@@ -298,20 +298,21 @@
 
   <div class="grid">
     <section class="card span-7">
-      <h2>Tool Activity <span class="source">fleet-wide</span> <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
+      <h2>Fetches <span class="source">fetch_log, per domain</span> <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
       <div class="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Tool</th>
-              <th>Type</th>
+              <th>Domain</th>
               <th class="num">Calls</th>
               <th class="num">Failures</th>
               <th class="num">Failure&nbsp;rate</th>
-              <th>Last call</th>
+              <th class="num">Avg&nbsp;duration</th>
+              <th>Last fetch</th>
             </tr>
           </thead>
-          <tbody id="activity-body"><tr><td colspan="6" class="skeleton">Loading&hellip;</td></tr></tbody>
+          <tbody id="fetches-body"><tr><td colspan="7" class="skeleton">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -342,6 +343,26 @@
             </tr>
           </thead>
           <tbody id="models-body"><tr><td colspan="7" class="skeleton">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span-7">
+      <h2>API Calls <span class="source">api_call_log, per service</span></h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th>Service</th>
+              <th>Operation</th>
+              <th class="num">Calls</th>
+              <th class="num">Failures</th>
+              <th class="num">Failure&nbsp;rate</th>
+              <th>Last call</th>
+            </tr>
+          </thead>
+          <tbody id="api-calls-body"><tr><td colspan="7" class="skeleton">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -417,12 +438,6 @@ function routingPill(viaGateway) {
     : '<span class="pill neutral"><span class="dot"></span>direct</span>';
 }
 
-const SOURCE_TABLE_LABELS = { processing_log: 'LLM', fetch_log: 'fetch', api_call_log: 'API' };
-function sourceLabel(tables) {
-  if (!tables || !tables.length) return '—';
-  return tables.map(t => SOURCE_TABLE_LABELS[t] || t).join(' + ');
-}
-
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso.replace(' ', 'T') + (iso.includes('Z') ? '' : 'Z'));
@@ -439,26 +454,60 @@ function lookbackLabel() {
   return select.options[select.selectedIndex].textContent;
 }
 
-async function loadFleet() {
-  const body = document.getElementById('activity-body');
+async function loadFetches() {
+  const body = document.getElementById('fetches-body');
   const win = document.getElementById('activity-window');
+  try {
+    const res = await fetch('/api/fetches?lookback_hours=' + lookbackHours());
+    const data = await res.json();
+    win.textContent = `(${lookbackLabel()})`;
+    if (!data.usage.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty-state">No fetches in this window.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.usage.map(u => `
+      <tr>
+        <td>${u.tool_name}</td>
+        <td>${u.domain}</td>
+        <td class="num">${u.total}</td>
+        <td class="num">${u.failures}</td>
+        <td class="num">${pillFor(u.failure_rate, u.total)}</td>
+        <td class="num">${u.avg_duration_ms != null ? u.avg_duration_ms + 'ms' : '—'}</td>
+        <td>${fmtTime(u.last_call)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="7" class="empty-state">Could not reach the dashboard API.</td></tr>';
+  }
+}
+
+async function loadApiCalls() {
+  const body = document.getElementById('api-calls-body');
+  try {
+    const res = await fetch('/api/api-calls?lookback_hours=' + lookbackHours());
+    const data = await res.json();
+    if (!data.usage.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty-state">No API calls in this window.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.usage.map(u => `
+      <tr>
+        <td>${u.tool_name}</td>
+        <td>${u.service}</td>
+        <td>${u.operation}</td>
+        <td class="num">${u.total}</td>
+        <td class="num">${u.failures}</td>
+        <td class="num">${pillFor(u.failure_rate, u.total)}</td>
+        <td>${fmtTime(u.last_call)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="7" class="empty-state">Could not reach the dashboard API.</td></tr>';
+  }
+}
+
+async function loadFleet() {
   try {
     const res = await fetch('/api/fleet?lookback_hours=' + lookbackHours());
     const data = await res.json();
-    win.textContent = `(${lookbackLabel()})`;
-    if (!data.activity.length) {
-      body.innerHTML = '<tr><td colspan="6" class="empty-state">No activity in this window.</td></tr>';
-    } else {
-      body.innerHTML = data.activity.map(a => `
-        <tr>
-          <td>${a.tool_name}</td>
-          <td>${sourceLabel(a.tables)}</td>
-          <td class="num">${a.total}</td>
-          <td class="num">${a.failures}</td>
-          <td class="num">${pillFor(a.failure_rate, a.total)}</td>
-          <td>${fmtTime(a.last_call)}</td>
-        </tr>`).join('');
-    }
 
     const svcList = document.getElementById('services-list');
     if (!data.services.length) {
@@ -474,7 +523,7 @@ async function loadFleet() {
         </div>`).join('');
     }
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="5" class="empty-state">Could not reach the dashboard API.</td></tr>';
+    document.getElementById('services-list').innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }
 }
 
@@ -735,7 +784,7 @@ function refreshAll() {
     loadTensions(v.key, v.name),
     loadVaultHealth(v.key, v.name),
   ]);
-  Promise.allSettled([loadFleet(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
+  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

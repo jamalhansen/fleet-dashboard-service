@@ -47,6 +47,33 @@ def test_models_endpoint_shape():
     assert body["by_provider"][1]["provider"] == "deepseek"
 
 
+def test_fetches_endpoint_shape():
+    usage = [
+        core.FetchUsage(tool_name="http-retriever-service", domain="arxiv.org", total=12, failures=1, avg_duration_ms=250.4, last_call="2026-09-21 07:07:42"),
+    ]
+    with patch("fleet_dashboard.server.core.get_fetch_usage", return_value=usage):
+        resp = client.get("/api/fetches")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["usage"][0]["domain"] == "arxiv.org"
+    assert body["usage"][0]["total"] == 12
+    assert body["usage"][0]["failure_rate"] == round(1 / 12, 4)
+    assert body["usage"][0]["avg_duration_ms"] == 250
+
+
+def test_api_calls_endpoint_shape():
+    usage = [
+        core.ApiCallUsage(tool_name="content-discovery-agent", service="readwise", operation="list_highlights", total=5, failures=0, last_call="2026-09-21 07:00:00"),
+    ]
+    with patch("fleet_dashboard.server.core.get_api_call_usage", return_value=usage):
+        resp = client.get("/api/api-calls")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["usage"][0]["service"] == "readwise"
+    assert body["usage"][0]["operation"] == "list_highlights"
+    assert body["usage"][0]["total"] == 5
+
+
 def test_tensions_endpoint_shape():
     summary = core.TensionSummary(pending_count=3, active_count=1, recent_titles=["A tension"])
     with patch("fleet_dashboard.server.core.get_tension_summary", return_value=summary):

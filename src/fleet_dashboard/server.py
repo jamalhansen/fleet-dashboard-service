@@ -146,6 +146,44 @@ def api_repo_health():
     }
 
 
+@app.get("/api/fetches")
+def api_fetches(lookback_hours: float = 24 * 7):
+    usage = core.get_fetch_usage(lookback_hours=lookback_hours)
+    return {
+        "usage": [
+            {
+                "tool_name": u.tool_name,
+                "domain": u.domain,
+                "total": u.total,
+                "failures": u.failures,
+                "failure_rate": round(u.failure_rate, 4),
+                "avg_duration_ms": round(u.avg_duration_ms) if u.avg_duration_ms is not None else None,
+                "last_call": u.last_call,
+            }
+            for u in usage
+        ],
+    }
+
+
+@app.get("/api/api-calls")
+def api_api_calls(lookback_hours: float = 24 * 7):
+    usage = core.get_api_call_usage(lookback_hours=lookback_hours)
+    return {
+        "usage": [
+            {
+                "tool_name": u.tool_name,
+                "service": u.service,
+                "operation": u.operation,
+                "total": u.total,
+                "failures": u.failures,
+                "failure_rate": round(u.failure_rate, 4),
+                "last_call": u.last_call,
+            }
+            for u in usage
+        ],
+    }
+
+
 @app.get("/api/gateway-routing")
 def api_gateway_routing():
     a = core.get_gateway_routing_audit()

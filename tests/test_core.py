@@ -402,6 +402,109 @@ class TestGetProviderUsage:
         assert by_provider["deepseek"].tool_count == 1
 
 
+class TestGetFetchUsage:
+    """Jamal 2026-09-21: the old merged Tool Activity total read as '49
+    calls' with no way to tell an LLM completion from a plain HTTP fetch --
+    this is the per-domain detail that replaces it for fetch_log."""
+
+    def _seed(self, db_path, rows):
+        # rows: list of (tool_name, domain, success, duration_ms)
+        conn = duckdb.connect(str(db_path))
+        try:
+            conn.execute("CREATE TABLE tools (id INTEGER, name VARCHAR)")
+            conn.execute(
+                "CREATE TABLE fetch_log (tool_id INTEGER, domain VARCHAR, success BOOLEAN, "
+                "duration_ms INTEGER, attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            )
+            tool_ids, next_id = {}, 1
+            for name, _, _, _ in rows:
+                if name not in tool_ids:
+                    tool_ids[name] = next_id
+                    conn.execute("INSERT INTO tools (id, name) VALUES (?, ?)", [next_id, name])
+                    next_id += 1
+            for name, domain, success, duration_ms in rows:
+                conn.execute(
+                    "INSERT INTO fetch_log (tool_id, domain, success, duration_ms) VALUES (?, ?, ?, ?)",
+                    [tool_ids[name], domain, success, duration_ms],
+                )
+        finally:
+            conn.close()
+
+    def test_missing_db_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(tmp_path / "nope.duckdb"))
+        assert core.get_fetch_usage() == []
+
+    def test_groups_by_tool_and_domain(self, tmp_path, monkeypatch):
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        self._seed(db, [
+            ("http-retriever-service", "arxiv.org", True, 200),
+            ("http-retriever-service", "arxiv.org", True, 400),
+            ("http-retriever-service", "substackcdn.com", False, 100),
+        ])
+        usage = core.get_fetch_usage()
+        by_domain = {u.domain: u for u in usage}
+        assert by_domain["arxiv.org"].total == 2
+        assert by_domain["arxiv.org"].failures == 0
+        assert by_domain["arxiv.org"].avg_duration_ms == 300
+        assert by_domain["substackcdn.com"].total == 1
+        assert by_domain["substackcdn.com"].failures == 1
+
+    def test_sorted_by_total_descending(self, tmp_path, monkeypatch):
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        self._seed(db, [
+            ("http-retriever-service", "small.com", True, 100),
+            ("http-retriever-service", "big.com", True, 100),
+            ("http-retriever-service", "big.com", True, 100),
+        ])
+        usage = core.get_fetch_usage()
+        assert usage[0].domain == "big.com"
+
+
+class TestGetApiCallUsage:
+    def _seed(self, db_path, rows):
+        # rows: list of (tool_name, service, operation, success)
+        conn = duckdb.connect(str(db_path))
+        try:
+            conn.execute("CREATE TABLE tools (id INTEGER, name VARCHAR)")
+            conn.execute(
+                "CREATE TABLE api_call_log (tool_id INTEGER, service VARCHAR, operation VARCHAR, "
+                "success BOOLEAN, attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            )
+            tool_ids, next_id = {}, 1
+            for name, _, _, _ in rows:
+                if name not in tool_ids:
+                    tool_ids[name] = next_id
+                    conn.execute("INSERT INTO tools (id, name) VALUES (?, ?)", [next_id, name])
+                    next_id += 1
+            for name, service, operation, success in rows:
+                conn.execute(
+                    "INSERT INTO api_call_log (tool_id, service, operation, success) VALUES (?, ?, ?, ?)",
+                    [tool_ids[name], service, operation, success],
+                )
+        finally:
+            conn.close()
+
+    def test_missing_db_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(tmp_path / "nope.duckdb"))
+        assert core.get_api_call_usage() == []
+
+    def test_groups_by_tool_service_and_operation(self, tmp_path, monkeypatch):
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        self._seed(db, [
+            ("content-discovery-agent", "readwise", "list_highlights", True),
+            ("content-discovery-agent", "readwise", "list_highlights", False),
+            ("content-discovery-agent", "bluesky", "get_timeline", True),
+        ])
+        usage = core.get_api_call_usage()
+        by_op = {(u.service, u.operation): u for u in usage}
+        assert by_op[("readwise", "list_highlights")].total == 2
+        assert by_op[("readwise", "list_highlights")].failures == 1
+        assert by_op[("bluesky", "get_timeline")].total == 1
+
+
 class TestGetTensionSummary:
     def test_missing_vault_returns_zeroes(self, tmp_path):
         result = core.get_tension_summary(tmp_path / "does-not-exist")
@@ -695,6 +798,17 @@ class TestGetGatewayRoutingAudit:
     def test_direct_pydantic_ai_is_expected_direct(self, tmp_path):
         snapshot = self._snapshot(tmp_path, {
             "persona-counsel": {"gateway_routing": {"category": "direct_pydantic_ai"}},
+        })
+        with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].status == "expected_direct"
+
+    def test_direct_forced_is_expected_direct(self, tmp_path):
+        """pebble (2026-09-22): resolve_provider(..., use_gateway=False) for
+        a documented reason (must stay local) -- as deliberate as the
+        pydantic-ai exception, just a different mechanism."""
+        snapshot = self._snapshot(tmp_path, {
+            "pebble": {"gateway_routing": {"category": "direct_forced"}},
         })
         with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
             result = core.get_gateway_routing_audit(snapshot)

@@ -382,6 +382,11 @@
     </section>
 
     <section class="card span-12">
+      <h2>Gateway Routing <span class="source">source vs. actual traffic</span></h2>
+      <div id="gateway-routing-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-12">
       <h2>Frontmatter Validation <span class="source">BrainSync</span></h2>
       <div id="frontmatter-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
@@ -598,6 +603,37 @@ async function loadRepoHealth() {
   }
 }
 
+const GATEWAY_STATUS_PILL = {
+  review: '<span class="pill bad"><span class="dot"></span>review: direct call</span>',
+  unconfirmed: '<span class="pill warn"><span class="dot"></span>unconfirmed</span>',
+  ok: '<span class="pill good"><span class="dot"></span>gateway</span>',
+  expected_direct: '<span class="pill neutral"><span class="dot"></span>direct (by design)</span>',
+  no_llm_calls: '<span class="pill neutral"><span class="dot"></span>no LLM calls</span>',
+};
+
+async function loadGatewayRouting() {
+  const body = document.getElementById('gateway-routing-body');
+  try {
+    const res = await fetch('/api/gateway-routing');
+    const g = await res.json();
+    if (!g.available) {
+      body.innerHTML = '<div class="empty-state">Not run yet.</div>';
+      return;
+    }
+    const needsAttention = g.entries.filter(e => e.status === 'review' || e.status === 'unconfirmed');
+    const rows = needsAttention.length ? needsAttention : g.entries;
+    const rowsHtml = rows.map(e => `<tr><td>${e.tool_name}</td><td>${GATEWAY_STATUS_PILL[e.status] || e.status}</td><td>${fmtTime(e.last_call)}</td></tr>`).join('');
+    body.innerHTML = `
+      <div class="art-sub" style="margin-bottom:10px;">
+        <span>generated ${fmtTime(g.generated_at)}</span>
+        &middot; ${needsAttention.length} of ${g.entries.length} repos need a look
+      </div>
+      <div class="table-scroll"><table><thead><tr><th>Repo</th><th>Routing</th><th>Last activity</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
 async function loadFrontmatterValidation() {
   const body = document.getElementById('frontmatter-body');
   try {
@@ -699,7 +735,7 @@ function refreshAll() {
     loadTensions(v.key, v.name),
     loadVaultHealth(v.key, v.name),
   ]);
-  Promise.allSettled([loadFleet(), loadModels(), ...vaultLoads, loadRepoHealth(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
+  Promise.allSettled([loadFleet(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

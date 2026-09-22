@@ -697,3 +697,81 @@ def get_repo_health(
         )
     except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
         return RepoHealthSummary(available=False)
+
+
+@dataclass
+class GatewayRoutingEntry:
+    tool_name: str
+    category: str  # "gateway" | "direct_pydantic_ai" | "direct_unclassified" | "none"
+    status: str  # "ok" | "unconfirmed" | "review" | "expected_direct" | "no_llm_calls"
+    last_call: str | None = None
+
+
+@dataclass
+class GatewayRoutingSummary:
+    available: bool
+    generated_at: str | None = None
+    entries: list[GatewayRoutingEntry] = field(default_factory=list)
+
+
+def get_gateway_routing_audit(
+    snapshot_path: str | Path = "~/sync/local-first/repo-health-latest.json",
+    lookback_hours: float = 24 * 30,
+) -> GatewayRoutingSummary:
+    """Cross-references repo-health-run's static source classification
+    (does this repo's code call resolve_provider(), a pydantic-ai Agent, or
+    construct a provider directly?) against real processing_log activity, so
+    a repo that LOOKS gateway-routed in its own source but has never actually
+    logged a via_gateway=True row shows up distinctly from one that's simply
+    never been run. Jamal 2026-09-21: "I would like to see if something isn't
+    using the gateway that should be" -- the DB alone can't answer that (it
+    has no notion of intent), so this needs the static category too.
+
+    Status meanings:
+    - "ok": source calls resolve_provider() and has a confirmed via_gateway
+      row in the lookback window.
+    - "unconfirmed": source calls resolve_provider() but no via_gateway row
+      shows up -- either it hasn't run recently, or something's wrong
+      (LLM_GATEWAY_URL unset, gateway down when it last ran).
+    - "review": constructs a provider directly with no documented reason
+      (pebble is the first found, 2026-09-21) -- gets none of the gateway's
+      fallback/cost/reliability tracking; a real migration candidate.
+    - "expected_direct": pydantic-ai Agent(retries=N) for auto-retry on
+      invalid structured output, a capability resolve_provider() doesn't
+      have (persona-counsel, marketing-persona-counsel, pedantic-troll) --
+      deliberate, not a gap.
+    - "no_llm_calls": no .complete()/.acomplete() found in source.
+
+    Never raises: a missing/malformed snapshot or unreachable tracking DB
+    yields an empty, unavailable summary rather than breaking the page.
+    """
+    try:
+        path = Path(snapshot_path).expanduser()
+        if not path.exists():
+            return GatewayRoutingSummary(available=False)
+        data = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
+        return GatewayRoutingSummary(available=False)
+
+    usage = get_model_usage(lookback_hours=lookback_hours)
+    confirmed_gateway = {u.tool_name for u in usage if u.via_gateway}
+    last_call_by_tool = {a.tool_name: a.last_call for a in get_fleet_activity(lookback_hours=lookback_hours)}
+
+    entries = []
+    for name, r in data.get("repos", {}).items():
+        category = r.get("gateway_routing", {}).get("category", "none")
+        if category == "gateway":
+            status = "ok" if name in confirmed_gateway else "unconfirmed"
+        elif category == "direct_unclassified":
+            status = "review"
+        elif category == "direct_pydantic_ai":
+            status = "expected_direct"
+        else:
+            status = "no_llm_calls"
+        entries.append(GatewayRoutingEntry(tool_name=name, category=category, status=status, last_call=last_call_by_tool.get(name)))
+
+    # Surface what needs a look first: review > unconfirmed > ok > expected_direct > no_llm_calls.
+    order = {"review": 0, "unconfirmed": 1, "ok": 2, "expected_direct": 3, "no_llm_calls": 4}
+    entries.sort(key=lambda e: (order.get(e.status, 9), e.tool_name))
+
+    return GatewayRoutingSummary(available=True, generated_at=data.get("generated_at"), entries=entries)

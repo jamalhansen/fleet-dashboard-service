@@ -123,6 +123,27 @@ def test_repo_health_endpoint_available():
     assert body["repos"][0]["name"] == "bad-repo"
 
 
+def test_gateway_routing_endpoint_available():
+    summary = core.GatewayRoutingSummary(
+        available=True,
+        generated_at="2026-09-21T06:00:00Z",
+        entries=[core.GatewayRoutingEntry(tool_name="pebble", category="direct_unclassified", status="review")],
+    )
+    with patch("fleet_dashboard.server.core.get_gateway_routing_audit", return_value=summary):
+        resp = client.get("/api/gateway-routing")
+    body = resp.json()
+    assert body["available"] is True
+    assert body["entries"][0]["tool_name"] == "pebble"
+    assert body["entries"][0]["status"] == "review"
+
+
+def test_gateway_routing_endpoint_unavailable():
+    summary = core.GatewayRoutingSummary(available=False)
+    with patch("fleet_dashboard.server.core.get_gateway_routing_audit", return_value=summary):
+        resp = client.get("/api/gateway-routing")
+    assert resp.json() == {"available": False}
+
+
 def test_frontmatter_validation_endpoint_unavailable():
     summary = core.FrontmatterValidationSummary(available=False)
     with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):

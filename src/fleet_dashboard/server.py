@@ -146,6 +146,26 @@ def api_repo_health():
     }
 
 
+@app.get("/api/gateway-routing")
+def api_gateway_routing():
+    a = core.get_gateway_routing_audit()
+    if not a.available:
+        return {"available": False}
+    return {
+        "available": True,
+        "generated_at": a.generated_at,
+        "entries": [
+            {
+                "tool_name": e.tool_name,
+                "category": e.category,
+                "status": e.status,
+                "last_call": e.last_call,
+            }
+            for e in a.entries
+        ],
+    }
+
+
 @app.get("/api/art")
 def api_art():
     item = core.get_latest_art(ART_ITEMS_DIR)

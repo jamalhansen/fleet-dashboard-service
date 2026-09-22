@@ -3,6 +3,7 @@ import plistlib
 from unittest.mock import MagicMock, patch
 
 import duckdb
+import pytest
 
 from fleet_dashboard import core
 
@@ -627,6 +628,106 @@ class TestGetRepoHealth:
         result = core.get_repo_health(snapshot)
         assert result.repos[0]["ok"] is False
         assert result.repos[0]["has_remote"] is False
+
+
+class TestGetGatewayRoutingAudit:
+    """Jamal 2026-09-21: 'I would like to see if something isn't using the
+    gateway that should be' -- cross-references repo-health-run's static
+    source classification against real processing_log via_gateway activity."""
+
+    @pytest.fixture(autouse=True)
+    def _no_fleet_activity(self):
+        # last_call comes from get_fleet_activity(), which reads the real
+        # tracking DB when not patched -- tests that don't care about
+        # last_call shouldn't depend on this machine's actual DB state.
+        with patch("fleet_dashboard.core.get_fleet_activity", return_value=[]):
+            yield
+
+    def _snapshot(self, tmp_path, repos):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({"generated_at": "2026-09-21T06:00:00Z", "repos": repos}))
+        return snapshot
+
+    def test_missing_snapshot_returns_unavailable(self, tmp_path):
+        result = core.get_gateway_routing_audit(tmp_path / "nope.json")
+        assert result.available is False
+
+    def test_malformed_snapshot_returns_unavailable_not_raises(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text("not valid json {{{")
+        result = core.get_gateway_routing_audit(snapshot)
+        assert result.available is False
+
+    def test_gateway_category_with_confirmed_activity_is_ok(self, tmp_path):
+        snapshot = self._snapshot(tmp_path, {
+            "obsidian-vault-auto-tagger": {"gateway_routing": {"category": "gateway"}},
+        })
+        usage = [core.ModelUsage(tool_name="obsidian-vault-auto-tagger", model="qwen2.5:7b", provider="ollama", total=5, failures=0, via_gateway=True)]
+        with patch("fleet_dashboard.core.get_model_usage", return_value=usage):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].status == "ok"
+
+    def test_gateway_category_with_no_confirmed_activity_is_unconfirmed(self, tmp_path):
+        """Source calls resolve_provider(), but nothing in the lookback
+        window shows via_gateway=True for it -- could just mean it hasn't
+        run recently, or could mean something's actually broken; either way
+        it's not confirmed, so it shouldn't read as silently fine."""
+        snapshot = self._snapshot(tmp_path, {
+            "some-tool": {"gateway_routing": {"category": "gateway"}},
+        })
+        with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].status == "unconfirmed"
+
+    def test_direct_unclassified_is_flagged_for_review_regardless_of_activity(self, tmp_path):
+        """pebble: constructs OllamaProvider() directly with no documented
+        reason -- flag it for review even if it has real (non-gateway)
+        activity logged, since the concern is architectural, not whether
+        it's running."""
+        snapshot = self._snapshot(tmp_path, {
+            "pebble": {"gateway_routing": {"category": "direct_unclassified"}},
+        })
+        usage = [core.ModelUsage(tool_name="pebble", model="qwen2.5:3b", provider="ollama", total=12, failures=0, via_gateway=False)]
+        with patch("fleet_dashboard.core.get_model_usage", return_value=usage):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].status == "review"
+
+    def test_direct_pydantic_ai_is_expected_direct(self, tmp_path):
+        snapshot = self._snapshot(tmp_path, {
+            "persona-counsel": {"gateway_routing": {"category": "direct_pydantic_ai"}},
+        })
+        with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].status == "expected_direct"
+
+    def test_none_category_is_no_llm_calls(self, tmp_path):
+        snapshot = self._snapshot(tmp_path, {
+            "vault-query": {"gateway_routing": {"category": "none"}},
+        })
+        with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].status == "no_llm_calls"
+
+    def test_review_and_unconfirmed_sort_first(self, tmp_path):
+        snapshot = self._snapshot(tmp_path, {
+            "z-fine-tool": {"gateway_routing": {"category": "gateway"}},
+            "a-review-tool": {"gateway_routing": {"category": "direct_unclassified"}},
+        })
+        usage = [core.ModelUsage(tool_name="z-fine-tool", model="m", provider="ollama", total=1, failures=0, via_gateway=True)]
+        with patch("fleet_dashboard.core.get_model_usage", return_value=usage):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].tool_name == "a-review-tool"
+        assert result.entries[0].status == "review"
+
+    def test_last_call_wired_from_fleet_activity(self, tmp_path):
+        snapshot = self._snapshot(tmp_path, {
+            "obsidian-vault-auto-tagger": {"gateway_routing": {"category": "gateway"}},
+        })
+        activity = [core.ToolActivity(tool_name="obsidian-vault-auto-tagger", total=5, failures=0, last_call="2026-09-21 07:00:00", tables=["processing_log"])]
+        with patch("fleet_dashboard.core.get_model_usage", return_value=[]), \
+             patch("fleet_dashboard.core.get_fleet_activity", return_value=activity):
+            result = core.get_gateway_routing_audit(snapshot)
+        assert result.entries[0].last_call == "2026-09-21 07:00:00"
 
 
 class TestGetFrontmatterValidation:

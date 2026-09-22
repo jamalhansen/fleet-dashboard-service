@@ -438,6 +438,17 @@ function routingPill(viaGateway) {
     : '<span class="pill neutral"><span class="dot"></span>direct</span>';
 }
 
+// llm_gateway/server.py's _log() attributes a row to `result.tool_name or
+// TOOL_NAME` -- a caller that didn't send its own tool_name (a manual curl
+// test, an unmigrated client) lands here under the gateway's own name,
+// which otherwise reads as if the gateway itself were a fleet tool racking
+// up thousands of calls. Jamal 2026-09-22.
+function toolLabel(name) {
+  return name === 'llm-gateway-service'
+    ? '<em title="No tool_name sent with this gateway request">unattributed</em>'
+    : name;
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso.replace(' ', 'T') + (iso.includes('Z') ? '' : 'Z'));
@@ -564,7 +575,7 @@ async function loadModels() {
     }
     body.innerHTML = data.usage.map(u => `
       <tr>
-        <td>${u.tool_name}</td>
+        <td>${toolLabel(u.tool_name)}</td>
         <td>${u.provider}</td>
         <td>${u.model}</td>
         <td>${routingPill(u.via_gateway)}</td>

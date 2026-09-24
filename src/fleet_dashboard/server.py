@@ -132,6 +132,21 @@ def api_frontmatter_validation():
     }
 
 
+@app.get("/api/blog-validation")
+def api_blog_validation():
+    v = core.get_blog_validation()
+    if not v.available:
+        return {"available": False}
+    return {
+        "available": True,
+        "generated_at": v.generated_at,
+        "targets": v.targets,
+        "posts": v.posts,
+        "posts_failed": v.posts_failed,
+        "blocks_failed": v.blocks_failed,
+    }
+
+
 @app.get("/api/repo-health")
 def api_repo_health():
     h = core.get_repo_health()

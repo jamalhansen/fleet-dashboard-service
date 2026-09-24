@@ -171,6 +171,36 @@ def test_gateway_routing_endpoint_unavailable():
     assert resp.json() == {"available": False}
 
 
+def test_blog_validation_endpoint_unavailable():
+    summary = core.BlogValidationSummary(available=False)
+    with patch("fleet_dashboard.server.core.get_blog_validation", return_value=summary):
+        resp = client.get("/api/blog-validation")
+    assert resp.status_code == 200
+    assert resp.json() == {"available": False}
+
+
+def test_blog_validation_endpoint_available():
+    target = {
+        "name": "vault", "posts": 137, "posts_passed": 97, "posts_failed": 40,
+        "blocks_passed": 245, "blocks_failed": 85, "blocks_skipped": 121,
+        "fully_covered": 8, "needs_attention": 97, "assertion_pct": 13,
+        "failed_posts": [{"slug": "03a-find-errors-with-grep", "errors": ["block 0 (bash): exit 1"]}],
+        "more_failed": 0,
+    }
+    summary = core.BlogValidationSummary(
+        available=True, generated_at="2026-09-23T12:00:00Z", targets=[target],
+        posts=137, posts_failed=40, blocks_failed=85,
+    )
+    with patch("fleet_dashboard.server.core.get_blog_validation", return_value=summary):
+        resp = client.get("/api/blog-validation")
+    body = resp.json()
+    assert body["available"] is True
+    assert body["posts"] == 137
+    assert body["posts_failed"] == 40
+    assert body["blocks_failed"] == 85
+    assert body["targets"] == [target]
+
+
 def test_frontmatter_validation_endpoint_unavailable():
     summary = core.FrontmatterValidationSummary(available=False)
     with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):

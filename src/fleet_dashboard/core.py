@@ -732,6 +732,71 @@ def get_frontmatter_validation(
 
 
 # ---------------------------------------------------------------------------
+# Code-block validation (personal-infra's blog-validate-run script, weekly
+# via com.localfirst.blog-validation) -- do the code samples embedded in
+# posts still run? One row per target: the published blog, the vault drafts
+# they were written in, and the newsletter patterns.
+# ---------------------------------------------------------------------------
+
+_FAILED_POSTS_CAP = 20
+
+
+@dataclass
+class BlogValidationSummary:
+    available: bool
+    generated_at: str | None = None
+    targets: list[dict] = field(default_factory=list)
+    posts: int = 0
+    posts_failed: int = 0
+    blocks_failed: int = 0
+
+
+def get_blog_validation(
+    snapshot_path: str | Path = "~/sync/local-first/blog-validate-latest.json",
+) -> BlogValidationSummary:
+    """Reads the snapshot blog-validate-run writes -- never raises: the job
+    not having run yet (or ever) is a normal, expected state."""
+    try:
+        path = Path(snapshot_path).expanduser()
+        if not path.exists():
+            return BlogValidationSummary(available=False)
+        data = json.loads(path.read_text())
+
+        targets = []
+        for t in data.get("targets", []):
+            summary = t.get("summary", {})
+            coverage = t.get("coverage", {})
+            failed_posts = t.get("failed_posts", [])
+            targets.append(
+                {
+                    "name": t.get("name", ""),
+                    "posts": summary.get("posts", 0),
+                    "posts_passed": summary.get("posts_passed", 0),
+                    "posts_failed": summary.get("posts_failed", 0),
+                    "blocks_passed": summary.get("blocks_passed", 0),
+                    "blocks_failed": summary.get("blocks_failed", 0),
+                    "blocks_skipped": summary.get("blocks_skipped", 0),
+                    "fully_covered": coverage.get("fully_covered", 0),
+                    "needs_attention": coverage.get("needs_attention", 0),
+                    "assertion_pct": coverage.get("assertion_pct", 0),
+                    "failed_posts": failed_posts[:_FAILED_POSTS_CAP],
+                    "more_failed": max(0, len(failed_posts) - _FAILED_POSTS_CAP),
+                }
+            )
+
+        return BlogValidationSummary(
+            available=True,
+            generated_at=data.get("generated_at"),
+            targets=targets,
+            posts=sum(t["posts"] for t in targets),
+            posts_failed=sum(t["posts_failed"] for t in targets),
+            blocks_failed=sum(t["blocks_failed"] for t in targets),
+        )
+    except Exception:  # noqa: BLE001 - a malformed/partial snapshot file shouldn't break the page
+        return BlogValidationSummary(available=False)
+
+
+# ---------------------------------------------------------------------------
 # Repo health (personal-infra's repo-health-run script, daily via
 # com.localfirst.repo-health) -- per-repo lint/tests/git/hooks status across
 # the fleet, so a stalled or broken repo surfaces without running `make

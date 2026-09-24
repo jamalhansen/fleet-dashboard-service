@@ -647,6 +647,59 @@ class TestGetVaultHealth:
         assert result.observations_pending == 1
 
 
+class TestGetBlogValidation:
+    def _snapshot(self, tmp_path, targets):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({"generated_at": "2026-09-23T12:00:00Z", "targets": targets}))
+        return snapshot
+
+    def test_missing_snapshot_returns_unavailable(self, tmp_path):
+        result = core.get_blog_validation(tmp_path / "nope.json")
+        assert result.available is False
+
+    def test_reads_real_snapshot_and_totals_across_targets(self, tmp_path):
+        snapshot = self._snapshot(tmp_path, [
+            {
+                "name": "blog",
+                "summary": {"posts": 67, "posts_passed": 67, "posts_failed": 0,
+                            "blocks_passed": 181, "blocks_failed": 0, "blocks_skipped": 86},
+                "coverage": {"fully_covered": 8, "needs_attention": 35, "assertion_pct": 3},
+                "failed_posts": [],
+            },
+            {
+                "name": "vault",
+                "summary": {"posts": 137, "posts_passed": 97, "posts_failed": 40,
+                            "blocks_passed": 245, "blocks_failed": 85, "blocks_skipped": 121},
+                "coverage": {"fully_covered": 8, "needs_attention": 97, "assertion_pct": 13},
+                "failed_posts": [{"slug": "03a-find-errors-with-grep", "errors": ["block 0 (bash): exit 1"]}],
+            },
+        ])
+        result = core.get_blog_validation(snapshot)
+        assert result.available is True
+        assert result.generated_at == "2026-09-23T12:00:00Z"
+        assert result.posts == 204
+        assert result.posts_failed == 40
+        assert result.blocks_failed == 85
+        assert [t["name"] for t in result.targets] == ["blog", "vault"]
+        assert result.targets[1]["assertion_pct"] == 13
+        assert result.targets[1]["failed_posts"][0]["slug"] == "03a-find-errors-with-grep"
+        assert result.targets[0]["more_failed"] == 0
+
+    def test_failed_posts_are_capped_with_a_more_count(self, tmp_path):
+        failed = [{"slug": f"post-{i}", "errors": []} for i in range(25)]
+        snapshot = self._snapshot(tmp_path, [
+            {"name": "vault", "summary": {"posts": 25, "posts_failed": 25}, "coverage": {}, "failed_posts": failed},
+        ])
+        result = core.get_blog_validation(snapshot)
+        assert len(result.targets[0]["failed_posts"]) == 20
+        assert result.targets[0]["more_failed"] == 5
+
+    def test_malformed_snapshot_returns_unavailable_not_raises(self, tmp_path):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text("not valid json {{{")
+        assert core.get_blog_validation(snapshot).available is False
+
+
 class TestGetRepoHealth:
     def test_missing_snapshot_returns_unavailable(self, tmp_path):
         result = core.get_repo_health(tmp_path / "nope.json")

@@ -411,6 +411,11 @@
       <h2>Frontmatter Validation <span class="source">BrainSync</span></h2>
       <div id="frontmatter-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
+
+    <section class="card span-12">
+      <h2>Code Block Validation <span class="source">blog &middot; vault drafts &middot; newsletter</span></h2>
+      <div id="blog-validation-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
   </div>
 </main>
 
@@ -705,6 +710,55 @@ async function loadGatewayRouting() {
   }
 }
 
+async function loadBlogValidation() {
+  const body = document.getElementById('blog-validation-body');
+  const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+  try {
+    const res = await fetch('/api/blog-validation');
+    const v = await res.json();
+    if (!v.available) {
+      body.innerHTML = '<div class="empty-state">Not run yet.</div>';
+      return;
+    }
+    const pill = t => t.posts_failed === 0
+      ? '<span class="pill good"><span class="dot"></span>passing</span>'
+      : `<span class="pill bad"><span class="dot"></span>${t.posts_failed} failing</span>`;
+    const rows = v.targets.map(t => `
+      <tr>
+        <td>${esc(t.name)}</td>
+        <td>${pill(t)}</td>
+        <td class="num">${t.posts}</td>
+        <td class="num">${t.posts_passed}</td>
+        <td class="num">${t.posts_failed}</td>
+        <td class="num">${t.blocks_failed}</td>
+        <td class="num">${t.fully_covered} / ${t.needs_attention}</td>
+        <td class="num">${t.assertion_pct}%</td>
+      </tr>`).join('');
+    const failing = v.targets.filter(t => t.failed_posts.length).map(t => `
+      <details class="todo-bucket">
+        <summary><span class="todo-count">${t.posts_failed}</span> failing in ${esc(t.name)}</summary>
+        <ul class="tension-list" style="margin-top:6px;">
+          ${t.failed_posts.map(p => `<li><strong>${esc(p.slug)}</strong>${p.errors.length ? ` &mdash; ${esc(p.errors[0])}` : ''}</li>`).join('')}
+          ${t.more_failed ? `<li class="empty-state">+ ${t.more_failed} more</li>` : ''}
+        </ul>
+      </details>`).join('');
+    body.innerHTML = `
+      <div class="tension-count-row">
+        <div class="tension-count"><span class="n">${v.posts}</span><span class="l">Posts checked</span></div>
+        <div class="tension-count"><span class="n">${v.posts_failed}</span><span class="l">Posts failing</span></div>
+        <div class="tension-count"><span class="n">${v.blocks_failed}</span><span class="l">Blocks failing</span></div>
+      </div>
+      <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(v.generated_at)}</span></div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Target</th><th>Status</th><th class="num">Posts</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Failed blocks</th><th class="num">Annotated / needs annotation</th><th class="num">Blocks asserting</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      ${failing ? `<h3 class="subhead">Failing posts</h3><div class="todo-list">${failing}</div>` : ''}`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
 async function loadFrontmatterValidation() {
   const body = document.getElementById('frontmatter-body');
   try {
@@ -806,7 +860,7 @@ function refreshAll() {
     loadTensions(v.key, v.name),
     loadVaultHealth(v.key, v.name),
   ]);
-  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadArt(), loadJapaneseTutor()])
+  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadBlogValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

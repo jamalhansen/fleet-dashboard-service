@@ -118,17 +118,17 @@ class TestGetFleetActivity:
 
 
 class TestGetLaunchAgents:
-    def test_filters_to_localfirst_and_jamalhansen_prefixes(self):
+    def test_filters_to_localfirst_prefix(self):
         fake = MagicMock()
         fake.stdout = (
             "-\t0\tcom.localfirst.artist-agent\n"
             "1234\t0\tcom.apple.something\n"
-            "5678\t0\tcom.jamalhansen.discovery-loop\n"
+            "5678\t0\tcom.localfirst.discovery-loop\n"
         )
         with patch("fleet_dashboard.core.subprocess.run", return_value=fake):
             statuses = core.get_launch_agents()
         labels = {s.label for s in statuses}
-        assert labels == {"com.localfirst.artist-agent", "com.jamalhansen.discovery-loop"}
+        assert labels == {"com.localfirst.artist-agent", "com.localfirst.discovery-loop"}
 
     def test_running_state_and_pid_parsed(self):
         fake = MagicMock()

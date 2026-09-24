@@ -15,7 +15,10 @@ import frontmatter
 import httpx
 from local_first_common.tracking import get_tracking_db_path
 
-LOCALFIRST_PREFIXES = ("com.localfirst.", "com.jamalhansen.")
+# 2026-09-24: discovery-loop, ollama-keepalive and voicejournal were renamed
+# from com.jamalhansen.* to com.localfirst.* so every LaunchAgent lives under
+# one prefix.
+LOCALFIRST_PREFIX = "com.localfirst."
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +392,7 @@ class ServiceStatus:
 
 
 def get_launch_agents() -> list[ServiceStatus]:
-    """Every com.localfirst.*/com.jamalhansen.* LaunchAgent's current state,
+    """Every com.localfirst.* LaunchAgent's current state,
     via `launchctl list` (no sudo, no privileged calls). Never raises."""
     try:
         result = subprocess.run(["launchctl", "list"], capture_output=True, text=True, check=True, timeout=5)
@@ -402,7 +405,7 @@ def get_launch_agents() -> list[ServiceStatus]:
         if len(parts) != 3:
             continue
         pid_str, status_str, label = parts
-        if not label.startswith(LOCALFIRST_PREFIXES):
+        if not label.startswith(LOCALFIRST_PREFIX):
             continue
         pid = None if pid_str == "-" else int(pid_str)
         try:

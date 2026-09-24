@@ -543,7 +543,7 @@ async function loadFleet() {
 
     const svcList = document.getElementById('services-list');
     if (!data.services.length) {
-      svcList.innerHTML = '<div class="empty-state">No com.localfirst.* / com.jamalhansen.* LaunchAgents found.</div>';
+      svcList.innerHTML = '<div class="empty-state">No com.localfirst.* LaunchAgents found.</div>';
     } else {
       svcList.innerHTML = data.services.map(s => `
         <div class="service-row">

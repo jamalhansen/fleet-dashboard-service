@@ -1,5 +1,6 @@
 import json
 import plistlib
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import duckdb
@@ -647,6 +648,56 @@ class TestGetVaultHealth:
         assert result.observations_pending == 1
 
 
+class TestGetWritingCadence:
+    TODAY = datetime(2026, 9, 24)  # noqa: DTZ001 - a Thursday; frontmatter dates are naive calendar dates
+
+    def _post(self, blog, slug, fm):
+        d = blog / slug
+        d.mkdir(parents=True)
+        (d / "index.md").write_text(f"---\n{fm}\n---\nbody\n")
+
+    def _note(self, vault, rel, status):
+        p = vault / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f"---\nstatus: {status}\n---\nbody\n")
+
+    def test_missing_blog_returns_unavailable(self, tmp_path):
+        assert core.get_writing_cadence(tmp_path / "nope", tmp_path, today=self.TODAY).available is False
+
+    def test_cadence_weeks_and_pipeline(self, tmp_path):
+        blog, vault = tmp_path / "blog", tmp_path / "vault"
+        self._post(blog, "recent", "title: Recent\ndate: 2026-09-15\ndraft: false")
+        self._post(blog, "series/older", "title: Older\ndate: 2026-07-20")
+        self._post(blog, "a-draft", "title: Draft\ndate: 2026-09-20\ndraft: true")
+        self._post(blog, "future", "title: Future\ndate: 2026-10-01")
+        self._note(vault, "series/x/posts/01-a.md", "outline")
+        self._note(vault, "series/x/posts/02-b/b.md", "draft")
+        self._note(vault, "series/x/posts/02-b/promo.md", "draft")
+        self._note(vault, "series/x/Series Index.md", "draft")
+        self._note(vault, "posts/2026/09/done.md", "published")
+
+        w = core.get_writing_cadence(blog, vault, today=self.TODAY)
+        assert w.available is True
+        assert w.last_published == "2026-09-15"
+        assert w.last_published_title == "Recent"
+        assert w.days_since_last == 9
+        assert len(w.weeks) == 8
+        assert w.weeks[-1] == {"week_of": "2026-09-21", "posts": 0}
+        assert w.weeks[-2] == {"week_of": "2026-09-14", "posts": 1}
+        assert w.weeks_on_target == 1  # the window starts 2026-08-03; 2026-07-20 is before it
+        assert w.pipeline == {"draft": 1, "outline": 1, "idea": 0, "brainstorm": 0}
+        assert w.freshest_draft["name"] == "b"
+
+    def test_no_published_posts(self, tmp_path):
+        blog = tmp_path / "blog"
+        blog.mkdir()
+        w = core.get_writing_cadence(blog, tmp_path / "no-vault", today=self.TODAY)
+        assert w.available is True
+        assert w.days_since_last is None
+        assert w.weeks_on_target == 0
+        assert w.freshest_draft is None
+
+
 class TestGetBlogValidation:
     def _snapshot(self, tmp_path, targets):
         snapshot = tmp_path / "snapshot.json"
@@ -787,6 +838,29 @@ class TestGetRepoHealth:
         result = core.get_repo_health(snapshot)
         assert result.repos[0]["ok"] is False
         assert result.repos[0]["has_remote"] is False
+
+    def test_stale_install_counts_as_unhealthy(self, tmp_path):
+        """A committed fix isn't live until the uv tool is reinstalled; a
+        repo whose installed copy lags its source is not healthy."""
+        clean = {
+            "lint": {"ok": True, "error_count": 0},
+            "tests": {"ok": True, "passed": 5, "failed": 0},
+            "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+            "hooks": {"ok": True, "installed": True},
+        }
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({
+            "generated_at": "x", "total": 2, "healthy": 1,
+            "repos": {
+                "stale-tool": {**clean, "install": {"ok": False, "installed": True, "editable": False, "stale_files": 3}},
+                "older-snapshot-without-install-key": clean,
+            },
+        }))
+        by_name = {r["name"]: r for r in core.get_repo_health(snapshot).repos}
+        assert by_name["stale-tool"]["ok"] is False
+        assert by_name["stale-tool"]["install_ok"] is False
+        assert by_name["stale-tool"]["install_stale_files"] == 3
+        assert by_name["older-snapshot-without-install-key"]["ok"] is True
 
 
 class TestGetGatewayRoutingAudit:

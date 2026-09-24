@@ -413,6 +413,11 @@
     </section>
 
     <section class="card span-12">
+      <h2>Writing <span class="source">jamalhansen.com &middot; target: one post a week</span></h2>
+      <div id="writing-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
+    <section class="card span-12">
       <h2>Code Block Validation <span class="source">blog &middot; vault drafts &middot; newsletter</span></h2>
       <div id="blog-validation-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
@@ -657,6 +662,7 @@ async function loadRepoHealth() {
       if (!r.tests_ok) flags.push(`<span class="pill warn"><span class="dot"></span>${r.tests_failed} test fail</span>`);
       if (!r.hooks_ok) flags.push(`<span class="pill warn"><span class="dot"></span>hooks outdated</span>`);
       if (!r.has_remote) flags.push(`<span class="pill warn"><span class="dot"></span>no remote</span>`);
+      if (!r.install_ok) flags.push(`<span class="pill warn" title="uv tool install --reinstall ~/projects/local-first/${r.name}"><span class="dot"></span>installed copy stale (${r.install_stale_files} files)</span>`);
       if (r.dirty) flags.push(`<span class="pill"><span class="dot"></span>dirty</span>`);
       if (r.unpushed > 0) flags.push(`<span class="pill"><span class="dot"></span>${r.unpushed} unpushed</span>`);
       const status = r.ok
@@ -705,6 +711,45 @@ async function loadGatewayRouting() {
         &middot; ${needsAttention.length} of ${g.entries.length} repos need a look
       </div>
       <div class="table-scroll"><table><thead><tr><th>Repo</th><th>Routing</th><th>Last activity</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
+async function loadWriting() {
+  const body = document.getElementById('writing-body');
+  const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+  try {
+    const res = await fetch('/api/writing');
+    const w = await res.json();
+    if (!w.available) {
+      body.innerHTML = '<div class="empty-state">Blog checkout not found.</div>';
+      return;
+    }
+    const since = w.days_since_last;
+    const sincePill = since === null ? ''
+      : since <= 7 ? '<span class="pill good"><span class="dot"></span>on pace</span>'
+      : since <= 21 ? '<span class="pill warn"><span class="dot"></span>slipping</span>'
+      : '<span class="pill bad"><span class="dot"></span>stalled</span>';
+    const weeks = w.weeks.map(wk => `
+      <div title="week of ${wk.week_of}: ${wk.posts} post${wk.posts === 1 ? '' : 's'}"
+           style="flex:1;text-align:center;">
+        <div style="height:28px;border-radius:4px;background:${wk.posts ? 'var(--good)' : 'var(--bad-soft)'};"></div>
+        <div class="l" style="font-size:11px;margin-top:4px;">${wk.week_of.slice(5)}</div>
+      </div>`).join('');
+    const p = w.pipeline;
+    body.innerHTML = `
+      <div class="tension-count-row">
+        <div class="tension-count"><span class="n">${since ?? '—'}</span><span class="l">Days since last post ${sincePill}</span></div>
+        <div class="tension-count"><span class="n">${w.weeks_on_target}/${w.weeks.length}</span><span class="l">Weeks with a post</span></div>
+        <div class="tension-count"><span class="n">${p.draft}</span><span class="l">Drafts</span></div>
+        <div class="tension-count"><span class="n">${p.outline}</span><span class="l">Outlines waiting</span></div>
+      </div>
+      <div style="display:flex;gap:6px;margin:10px 0;">${weeks}</div>
+      <div class="art-sub">
+        <span>last: ${esc(w.last_published_title)} (${w.last_published ?? '—'})</span>
+        ${w.freshest_draft ? `<span>freshest draft: ${esc(w.freshest_draft.name)} (touched ${w.freshest_draft.modified})</span>` : '<span>no drafts in progress</span>'}
+      </div>`;
   } catch (e) {
     body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }
@@ -861,7 +906,7 @@ function refreshAll() {
     loadTensions(v.key, v.name),
     loadVaultHealth(v.key, v.name),
   ]);
-  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadBlogValidation(), loadArt(), loadJapaneseTutor()])
+  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadWriting(), loadBlogValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

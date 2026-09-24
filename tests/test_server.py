@@ -171,6 +171,27 @@ def test_gateway_routing_endpoint_unavailable():
     assert resp.json() == {"available": False}
 
 
+def test_writing_endpoint_unavailable():
+    with patch("fleet_dashboard.server.core.get_writing_cadence", return_value=core.WritingCadence(available=False)):
+        resp = client.get("/api/writing")
+    assert resp.json() == {"available": False}
+
+
+def test_writing_endpoint_available():
+    cadence = core.WritingCadence(
+        available=True, last_published="2026-07-24", last_published_title="Go Hybrid", days_since_last=62,
+        weeks=[{"week_of": "2026-09-21", "posts": 0}], weeks_on_target=0,
+        pipeline={"draft": 1, "outline": 33, "idea": 12, "brainstorm": 25},
+        freshest_draft={"name": "my-test-suite-tried-to-brew-install", "modified": "2026-09-24"},
+    )
+    with patch("fleet_dashboard.server.core.get_writing_cadence", return_value=cadence):
+        body = client.get("/api/writing").json()
+    assert body["available"] is True
+    assert body["days_since_last"] == 62
+    assert body["pipeline"]["outline"] == 33
+    assert body["freshest_draft"]["name"] == "my-test-suite-tried-to-brew-install"
+
+
 def test_blog_validation_endpoint_unavailable():
     summary = core.BlogValidationSummary(available=False)
     with patch("fleet_dashboard.server.core.get_blog_validation", return_value=summary):

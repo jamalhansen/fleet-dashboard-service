@@ -732,6 +732,117 @@ def get_frontmatter_validation(
 
 
 # ---------------------------------------------------------------------------
+# Writing cadence -- the blog's publishing rhythm against the one-post-a-week
+# target in BrainSync/blog/content-strategy-plan-2026.md, plus what's in the
+# vault pipeline. Read live from the files, like vault health: no job needed.
+# ---------------------------------------------------------------------------
+
+_WEEKS_SHOWN = 8
+# Statuses that mean "this could become a post": outline counts because the
+# plan's bottleneck is outline -> draft, so outlines are the queue to watch.
+_PIPELINE_STATUSES = ("draft", "outline", "idea", "brainstorm")
+
+
+@dataclass
+class WritingCadence:
+    available: bool
+    last_published: str | None = None
+    last_published_title: str | None = None
+    days_since_last: int | None = None
+    weeks: list[dict] = field(default_factory=list)  # oldest first: {"week_of", "posts"}
+    weeks_on_target: int = 0
+    pipeline: dict[str, int] = field(default_factory=dict)
+    freshest_draft: dict | None = None
+
+
+def _as_date(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    if hasattr(value, "year") and hasattr(value, "month"):  # datetime.date
+        return datetime(value.year, value.month, value.day)  # noqa: DTZ001 - frontmatter dates are naive calendar dates
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def get_writing_cadence(
+    blog_dir: str | Path = "~/projects/jamalhansen.com/content/blog",
+    vault_blog_dir: str | Path = "~/vaults/BrainSync/blog",
+    today: datetime | None = None,
+) -> WritingCadence:
+    """Never raises: a missing blog checkout or vault degrades this card only."""
+    try:
+        today = (today or datetime.now()).replace(hour=0, minute=0, second=0, microsecond=0)  # noqa: DTZ005 - compared against naive frontmatter dates
+        blog = Path(blog_dir).expanduser()
+        if not blog.exists():
+            return WritingCadence(available=False)
+
+        published: list[tuple[datetime, str]] = []
+        for index in blog.rglob("index.md"):
+            try:
+                meta = frontmatter.load(index).metadata
+            except Exception:  # noqa: BLE001, S112 - one malformed post shouldn't hide the rest
+                continue
+            posted = _as_date(meta.get("date"))
+            if meta.get("draft") is True or posted is None or posted > today:
+                continue
+            published.append((posted, str(meta.get("title") or index.parent.name)))
+        published.sort()
+
+        week_start = today - timedelta(days=today.weekday())  # Monday
+        weeks = []
+        for i in range(_WEEKS_SHOWN - 1, -1, -1):
+            start = week_start - timedelta(weeks=i)
+            end = start + timedelta(days=7)
+            weeks.append({
+                "week_of": start.date().isoformat(),
+                "posts": sum(1 for d, _ in published if start <= d < end),
+            })
+
+        pipeline = dict.fromkeys(_PIPELINE_STATUSES, 0)
+        freshest: tuple[float, Path, str] | None = None
+        vault = Path(vault_blog_dir).expanduser()
+        if vault.exists():
+            for note in vault.rglob("*.md"):
+                rel = note.relative_to(vault).parts
+                if "posts" not in rel or note.name == "promo.md":
+                    continue
+                try:
+                    status = str(frontmatter.load(note).metadata.get("status") or "")
+                except Exception:  # noqa: BLE001, S112 - hand-edited frontmatter fails to parse in many ways
+                    continue
+                if status in pipeline:
+                    pipeline[status] += 1
+                    mtime = note.stat().st_mtime
+                    if status == "draft" and (freshest is None or mtime > freshest[0]):
+                        freshest = (mtime, note, status)
+
+        last_date, last_title = published[-1] if published else (None, None)
+        return WritingCadence(
+            available=True,
+            last_published=last_date.date().isoformat() if last_date else None,
+            last_published_title=last_title,
+            days_since_last=(today - last_date).days if last_date else None,
+            weeks=weeks,
+            weeks_on_target=sum(1 for w in weeks if w["posts"] >= 1),
+            pipeline=pipeline,
+            freshest_draft=(
+                {
+                    "name": freshest[1].stem,
+                    "modified": datetime.fromtimestamp(freshest[0]).date().isoformat(),  # noqa: DTZ006 - local mtime shown as a local date
+                }
+                if freshest
+                else None
+            ),
+        )
+    except Exception:  # noqa: BLE001 - a read-only scan should degrade, not 500 the page
+        return WritingCadence(available=False)
+
+
+# ---------------------------------------------------------------------------
 # Code-block validation (personal-infra's blog-validate-run script, weekly
 # via com.localfirst.blog-validation) -- do the code samples embedded in
 # posts still run? One row per target: the published blog, the vault drafts
@@ -835,11 +946,13 @@ def get_repo_health(
             tests = r.get("tests", {})
             git = r.get("git", {})
             hooks = r.get("hooks", {})
+            install = r.get("install", {})
             ok = (
                 bool(lint.get("ok"))
                 and bool(tests.get("ok"))
                 and bool(hooks.get("ok"))
                 and bool(git.get("has_remote", True))
+                and bool(install.get("ok", True))
             )
             repos.append(
                 {
@@ -854,6 +967,8 @@ def get_repo_health(
                     "dirty": git.get("dirty", False),
                     "unpushed": git.get("unpushed", 0),
                     "has_remote": git.get("has_remote", True),
+                    "install_ok": install.get("ok", True),
+                    "install_stale_files": install.get("stale_files", 0),
                 }
             )
         repos.sort(key=lambda r: (r["ok"], r["name"]))

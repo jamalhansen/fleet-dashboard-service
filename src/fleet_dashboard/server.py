@@ -132,6 +132,23 @@ def api_frontmatter_validation():
     }
 
 
+@app.get("/api/writing")
+def api_writing():
+    w = core.get_writing_cadence()
+    if not w.available:
+        return {"available": False}
+    return {
+        "available": True,
+        "last_published": w.last_published,
+        "last_published_title": w.last_published_title,
+        "days_since_last": w.days_since_last,
+        "weeks": w.weeks,
+        "weeks_on_target": w.weeks_on_target,
+        "pipeline": w.pipeline,
+        "freshest_draft": w.freshest_draft,
+    }
+
+
 @app.get("/api/blog-validation")
 def api_blog_validation():
     v = core.get_blog_validation()

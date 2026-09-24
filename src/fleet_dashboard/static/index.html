@@ -728,6 +728,7 @@ async function loadBlogValidation() {
         <td>${esc(t.name)}</td>
         <td>${pill(t)}</td>
         <td class="num">${t.posts}</td>
+        <td class="num">${t.posts_skipped_by_status}</td>
         <td class="num">${t.posts_passed}</td>
         <td class="num">${t.posts_failed}</td>
         <td class="num">${t.blocks_failed}</td>
@@ -750,7 +751,7 @@ async function loadBlogValidation() {
       </div>
       <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(v.generated_at)}</span></div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Target</th><th>Status</th><th class="num">Posts</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Failed blocks</th><th class="num">Annotated / needs annotation</th><th class="num">Blocks asserting</th></tr></thead>
+        <thead><tr><th>Target</th><th>Status</th><th class="num">Posts</th><th class="num">Not run (status)</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Failed blocks</th><th class="num">Annotated / needs annotation</th><th class="num">Blocks asserting</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
       ${failing ? `<h3 class="subhead">Failing posts</h3><div class="todo-list">${failing}</div>` : ''}`;

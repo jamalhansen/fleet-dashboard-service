@@ -669,7 +669,8 @@ class TestGetBlogValidation:
             {
                 "name": "vault",
                 "summary": {"posts": 137, "posts_passed": 97, "posts_failed": 40,
-                            "blocks_passed": 245, "blocks_failed": 85, "blocks_skipped": 121},
+                            "blocks_passed": 245, "blocks_failed": 85, "blocks_skipped": 121,
+                            "posts_skipped_by_status": 70},
                 "coverage": {"fully_covered": 8, "needs_attention": 97, "assertion_pct": 13},
                 "failed_posts": [{"slug": "03a-find-errors-with-grep", "errors": ["block 0 (bash): exit 1"]}],
             },
@@ -682,6 +683,8 @@ class TestGetBlogValidation:
         assert result.blocks_failed == 85
         assert [t["name"] for t in result.targets] == ["blog", "vault"]
         assert result.targets[1]["assertion_pct"] == 13
+        assert result.targets[1]["posts_skipped_by_status"] == 70
+        assert result.targets[0]["posts_skipped_by_status"] == 0  # older snapshots lack the key
         assert result.targets[1]["failed_posts"][0]["slug"] == "03a-find-errors-with-grep"
         assert result.targets[0]["more_failed"] == 0
 

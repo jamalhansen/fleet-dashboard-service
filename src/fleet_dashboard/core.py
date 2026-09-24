@@ -776,6 +776,7 @@ def get_blog_validation(
                     "blocks_passed": summary.get("blocks_passed", 0),
                     "blocks_failed": summary.get("blocks_failed", 0),
                     "blocks_skipped": summary.get("blocks_skipped", 0),
+                    "posts_skipped_by_status": summary.get("posts_skipped_by_status", 0),
                     "fully_covered": coverage.get("fully_covered", 0),
                     "needs_attention": coverage.get("needs_attention", 0),
                     "assertion_pct": coverage.get("assertion_pct", 0),

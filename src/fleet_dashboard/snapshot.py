@@ -3,7 +3,9 @@
 Every read-only endpoint is evaluated up front -- once per lookback option the page
 offers and once per vault -- and baked into the page along with the art image. A
 small shim answers the page's fetch() calls from that data, so index.html itself is
-unchanged and the lookback picker still works. The file is overwritten each run.
+unchanged. The page is then rendered once in headless Chromium and saved with its
+scripts stripped: iOS opens a local HTML file without running JavaScript, so the
+file has to be finished HTML. The file is overwritten each run.
 """
 from __future__ import annotations
 
@@ -99,6 +101,35 @@ def render(html: str, data: dict[str, object], generated: datetime) -> str:
     return html[:first_script] + _SHIM % payload + html[first_script:]
 
 
+_SCRIPT = re.compile(r"<script\b[^>]*>.*?</script>", re.DOTALL | re.IGNORECASE)
+_STATIC_CSS = "<style>#lookback-select { display: none; }</style>\n</head>"
+
+
+def prerender(page: str, timeout_ms: int = 20_000) -> str:
+    """Run the page's JavaScript in headless Chromium; return the finished DOM without scripts."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            tab = browser.new_page()
+            tab.set_content(page, wait_until="load")
+            # Every panel starts as a .skeleton placeholder; wait until all are replaced.
+            # A timeout raises, so a half-rendered page never overwrites the last good one.
+            tab.wait_for_function(
+                "() => document.querySelectorAll('.skeleton').length === 0", timeout=timeout_ms
+            )
+            html = tab.content()
+        finally:
+            browser.close()
+    return strip_scripts(html)
+
+
+def strip_scripts(html: str) -> str:
+    """Drop scripts (inert on iOS anyway) and the picker, which can't work without them."""
+    return _SCRIPT.sub("", html).replace("</head>", _STATIC_CSS, 1)
+
+
 def write_snapshot(out: Path = DEFAULT_OUT, now: datetime | None = None) -> Path:
     html = INDEX.read_text(encoding="utf-8")
     data = collect(lookback_options(html), list(server.VAULTS))
@@ -109,7 +140,7 @@ def write_snapshot(out: Path = DEFAULT_OUT, now: datetime | None = None) -> Path
             art["image_url"] = art_data_url(item.image_path)
         else:
             art["available"] = False
-    page = render(html, data, now or datetime.now().astimezone())
+    page = prerender(render(html, data, now or datetime.now().astimezone()))
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp")
     tmp.write_text(page, encoding="utf-8")

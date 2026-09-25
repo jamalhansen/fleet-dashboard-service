@@ -3,6 +3,8 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from fleet_dashboard import snapshot
 
 INDEX_HTML = snapshot.INDEX.read_text(encoding="utf-8")
@@ -54,6 +56,7 @@ def test_render_injects_data_note_and_hides_live_controls():
 
 def test_write_snapshot_overwrites_atomically(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(snapshot, "collect", lambda lookbacks, vaults: {"/api/art": {"available": False}})
+    monkeypatch.setattr(snapshot, "prerender", lambda page: page)
     out = tmp_path / "Dashboards" / "fleet.html"
     snapshot.write_snapshot(out, now=datetime(2026, 9, 25, 8, 0, tzinfo=UTC))
     first = out.read_text()
@@ -61,3 +64,26 @@ def test_write_snapshot_overwrites_atomically(monkeypatch, tmp_path: Path):
     assert out.read_text() != first
     assert "8:30 AM" in out.read_text()
     assert list(out.parent.iterdir()) == [out]
+
+
+def test_strip_scripts_removes_js_and_hides_the_picker():
+    html = '<html><head></head><body><script>x()</script><SCRIPT src="a.js"></SCRIPT><p>ok</p></body></html>'
+    out = snapshot.strip_scripts(html)
+    assert "script" not in out.lower().replace("#lookback-select", "")
+    assert "<p>ok</p>" in out
+    assert "#lookback-select { display: none; }" in out
+
+
+def test_prerender_fills_every_panel_without_javascript(monkeypatch):
+    pytest.importorskip("playwright")
+    monkeypatch.setattr(snapshot, "_routes", dict)
+    data = {path: {} for path in set(re.findall(r"fetch\([`'](/api/[a-z-]+)", INDEX_HTML))}
+    page = snapshot.render(INDEX_HTML, data, datetime(2026, 9, 25, 7, 0, tzinfo=UTC))
+    try:
+        out = snapshot.prerender(page, timeout_ms=10_000)
+    except Exception as e:
+        if "Executable doesn't exist" in str(e):
+            pytest.skip("playwright chromium not installed")
+        raise
+    assert 'class="skeleton"' not in out
+    assert "<script" not in out.lower()

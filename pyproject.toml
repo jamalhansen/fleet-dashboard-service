@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 fleet-dashboard-service = "fleet_dashboard.server:main"
+fleet-dashboard-snapshot = "fleet_dashboard.snapshot:main"
 
 [build-system]
 requires = ["hatchling"]

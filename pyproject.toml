@@ -35,3 +35,6 @@ tension-triage-dashboard = { path = "../tension-triage-dashboard" }
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.fleet.exempt]
+tracking = "read-only dashboard over the tracking DB; it reports runs rather than being one"

@@ -40,3 +40,4 @@ pythonpath = ["src"]
 
 [tool.fleet.exempt]
 tracking = "read-only dashboard over the tracking DB; it reports runs rather than being one"
+entry-points = "a server (server:main) and a one-shot launchd job (snapshot:main); no interactive CLI"

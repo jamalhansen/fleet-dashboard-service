@@ -189,7 +189,7 @@ class TestGetModelUsage:
         assert by_model["deepseek-chat"].failures == 0
         assert by_model["deepseek-chat"].provider == "deepseek"
 
-    def test_null_model_reported_as_unset(self, tmp_path, monkeypatch):
+    def test_run_with_no_model_or_provider_is_not_llm_usage(self, tmp_path, monkeypatch):
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
@@ -197,12 +197,29 @@ class TestGetModelUsage:
             "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
             "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
-        conn.execute("INSERT INTO processing_log (tool_name, model, success) VALUES ('some-tool', NULL, true)")
+        conn.execute("INSERT INTO processing_log (tool_name, model, success) VALUES ('some-tool', NULL, true), ('other-tool', '', false)")
+        conn.close()
+
+        assert core.get_model_usage() == []
+
+    def test_local_provider_alias_counts_as_ollama(self, tmp_path, monkeypatch):
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        conn = duckdb.connect(str(db))
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
+            "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, provider, success) VALUES "
+            "('artist-agent', 'llama3.2:3b', 'local', true), ('artist-agent', 'llama3.2:3b', 'ollama', true)"
+        )
         conn.close()
 
         usage = core.get_model_usage()
-        assert usage[0].model == "(unset)"
-        assert usage[0].provider == "(unset)"
+        assert len(usage) == 1
+        assert usage[0].provider == "ollama"
+        assert usage[0].total == 2
 
     def test_provider_prefixed_and_bare_model_collapse_into_one_row(self, tmp_path, monkeypatch):
         """Real 2026-09-20 production data has both "phi4-mini" and

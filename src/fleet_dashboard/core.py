@@ -151,6 +151,11 @@ _KNOWN_PROVIDER_PREFIXES = {"ollama", "local", "anthropic", "gemini", "groq", "d
 _KNOWN_GROQ_MODELS = {"llama-3.3-70b-versatile"}
 
 
+def _canonical_provider(name: str) -> str:
+    # local_first_common registers "local" as a backward-compat alias for OllamaProvider.
+    return "ollama" if name == "local" else name
+
+
 def classify_provider(model: str | None) -> tuple[str, str]:
     """Best-effort (provider, display_model) from a raw processing_log.model
     string, for rows with no real `provider` column value. See the module
@@ -161,7 +166,7 @@ def classify_provider(model: str | None) -> tuple[str, str]:
     if ":" in model:
         prefix, _, rest = model.partition(":")
         if prefix in _KNOWN_PROVIDER_PREFIXES:
-            return prefix, rest or "(unset)"
+            return _canonical_provider(prefix), rest or "(unset)"
     lowered = model.lower()
     if lowered.startswith("<"):  # a repr string leaked from a test mock, e.g. "<MagicMock ...>"
         return "mock", model
@@ -174,7 +179,7 @@ def classify_provider(model: str | None) -> tuple[str, str]:
     if lowered.startswith("mock"):
         return "mock", model
     if lowered == "local":
-        return "local", model
+        return "ollama", model
     if model in _KNOWN_GROQ_MODELS:
         return "groq", model
     return "ollama", model
@@ -220,8 +225,12 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
     for tool_name, raw_model, real_provider, via_gateway, total, failures in rows:
         if not via_gateway and real_provider is None and (tool_name, raw_model) in gateway_pairs:
             continue
+        # timed_run() logs every tool run, LLM or not; a row with neither model
+        # nor provider is a plain tool run (fleet, vault-tools, ...), not LLM usage.
+        if not raw_model and not real_provider:
+            continue
         if real_provider:
-            provider, model = real_provider, (raw_model or "(unset)")
+            provider, model = _canonical_provider(real_provider), (raw_model or "(unset)")
         else:
             provider, model = classify_provider(raw_model)
         key = (tool_name, provider, model)

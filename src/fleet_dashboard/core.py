@@ -937,6 +937,25 @@ class RepoHealthSummary:
     repos: list[dict] = field(default_factory=list)
 
 
+def get_writing_practice(
+    status_path: str | Path = "~/sync/local-first/writing-practice-latest.json",
+) -> dict:
+    """calib's writing-practice status (today's prompt, streak, post starters, reminders).
+
+    Never raises; a missing or unreadable file is `{"available": False}`. `stale` marks a
+    file from an earlier day, when "today" in it no longer means today.
+    """
+    try:
+        path = Path(status_path).expanduser()
+        if not path.exists():
+            return {"available": False}
+        data = json.loads(path.read_text())
+        today = datetime.now().astimezone().date().isoformat()
+        return {"available": True, "stale": str(data.get("generated", ""))[:10] != today, **data}
+    except Exception:  # noqa: BLE001 - a half-written or hand-edited file should degrade this card only
+        return {"available": False}
+
+
 def get_repo_health(
     snapshot_path: str | Path = "~/sync/local-first/repo-health-latest.json",
 ) -> RepoHealthSummary:

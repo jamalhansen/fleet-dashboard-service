@@ -132,6 +132,11 @@ def api_frontmatter_validation():
     }
 
 
+@app.get("/api/writing-practice")
+def api_writing_practice():
+    return core.get_writing_practice()
+
+
 @app.get("/api/writing")
 def api_writing():
     w = core.get_writing_cadence()

@@ -297,6 +297,11 @@
   </header>
 
   <div class="grid">
+    <section class="card span-12">
+      <h2>Writing practice <span class="source">10 minutes a day &middot; calib</span></h2>
+      <div id="writing-practice-body"><div class="skeleton">Loading&hellip;</div></div>
+    </section>
+
     <section class="card span-7">
       <h2>Fetches <span class="source">fetch_log, per domain</span> <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
       <div class="table-scroll">
@@ -716,6 +721,61 @@ async function loadGatewayRouting() {
   }
 }
 
+async function loadWritingPractice() {
+  const body = document.getElementById('writing-practice-body');
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+  try {
+    const res = await fetch('/api/writing-practice');
+    const w = await res.json();
+    if (!w.available) {
+      body.innerHTML = '<div class="empty-state">No status yet. Run <code>calib write status</code>.</div>';
+      return;
+    }
+    const t = w.today;
+    const donePill = w.stale ? '<span class="pill warn"><span class="dot"></span>not checked yet today</span>'
+      : t.done ? '<span class="pill good"><span class="dot"></span>wrote today</span>'
+      : '<span class="pill bad"><span class="dot"></span>not yet today</span>';
+    const dots = w.days.map(d => `<div title="${d.day}${d.done ? ': wrote' : d.tracked === false ? ': before tracking' : ''}"
+        style="flex:1;height:14px;border-radius:3px;background:${d.done ? 'var(--good)' : d.tracked === false ? 'var(--surface-2)' : 'var(--bad-soft)'};"></div>`).join('');
+    const starter = s => `<li style="margin:4px 0;${s.held ? 'opacity:.55;' : ''}">
+        <a href="${esc(s.link)}" style="color:var(--accent);">${esc(s.title)}</a>
+        <span class="l" style="font-size:12px;"> &middot; ${s.held ? `waiting until ${esc(s.ready_after)}` : `${s.sections_left} section${s.sections_left === 1 ? '' : 's'} to write`}</span></li>`;
+    const group = (name, label) => {
+      const items = w.starters.filter(s => s.group === name);
+      return items.length ? `<div style="flex:1;min-width:260px;"><div class="l" style="font-weight:600;margin-bottom:4px;">${label}</div>
+        <ul style="margin:0;padding-left:18px;">${items.map(starter).join('')}</ul></div>` : '';
+    };
+    const r = w.reminders;
+    const reminders = [
+      r.art_unrated ? `<span>${r.art_unrated} art piece${r.art_unrated === 1 ? '' : 's'} to rate: <code>/rate-art</code></span>` : '',
+      r.predictions_due ? `<span>${r.predictions_due} prediction${r.predictions_due === 1 ? '' : 's'} due: <code>/predict review</code></span>` : '',
+      '<span>Log a prediction: <code>/predict</code></span>',
+    ].filter(Boolean).join('');
+    body.innerHTML = `
+      <div class="tension-count-row">
+        <div class="tension-count"><span class="n">${t.words}</span><span class="l">Words today ${donePill}</span></div>
+        <div class="tension-count"><span class="n">${t.streak}</span><span class="l">Day streak</span></div>
+        <div class="tension-count"><span class="n">${w.starters.filter(s => !s.held).length}</span><span class="l">Starters ready</span></div>
+      </div>
+      <div style="display:flex;gap:3px;margin:10px 0;">${dots}</div>
+      ${t.done ? '' : `<p style="margin:8px 0;"><strong>Today's 10 minutes:</strong> ${esc(t.prompt)}</p>`}
+      <details style="margin:8px 0;"><summary>How this works</summary>
+        <ol style="margin:6px 0;padding-left:20px;">
+          <li>Tap a starter below; it opens in Obsidian.</li>
+          <li>Pick one heading. Write under it for 10 minutes, then delete that italic prompt.</li>
+          <li>100 words in the vault counts as a day. Wrote somewhere else? <code>calib write done</code>.</li>
+          <li>When a starter reads like a post: set <code>status: draft</code> and move its folder to <code>blog/posts/YYYY/MM/</code>.</li>
+        </ol>
+      </details>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;">
+        ${group('from-building', 'From building')}${group('from-reading', 'From reading (weekly)')}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:6px 16px;flex-wrap:wrap;color:var(--text-dim);font-size:12.5px;">${reminders}<span>as of ${esc(w.generated.replace('T', ' ').slice(0, 16))}</span></div>`;
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+  }
+}
+
 async function loadWriting() {
   const body = document.getElementById('writing-body');
   const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
@@ -906,7 +966,7 @@ function refreshAll() {
     loadTensions(v.key, v.name),
     loadVaultHealth(v.key, v.name),
   ]);
-  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadWriting(), loadBlogValidation(), loadArt(), loadJapaneseTutor()])
+  Promise.allSettled([loadFleet(), loadFetches(), loadApiCalls(), loadModels(), ...vaultLoads, loadRepoHealth(), loadGatewayRouting(), loadFrontmatterValidation(), loadWritingPractice(), loadWriting(), loadBlogValidation(), loadArt(), loadJapaneseTutor()])
     .then(() => {
       document.getElementById('updated-at').textContent = 'updated ' + new Date().toLocaleTimeString();
     });

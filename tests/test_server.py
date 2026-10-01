@@ -295,3 +295,18 @@ def test_japanese_tutor_endpoint_includes_reviews_today():
     assert body["review_count"] == 1
     assert body["reviews_today_attempts"] == 7
     assert body["reviews_today_distinct_cards"] == 5
+
+
+def test_art_is_blind_until_rated():
+    from pathlib import Path
+
+    from fleet_dashboard.core import ArtItem
+
+    unrated = ArtItem("t", 0.7, "X", "2026-10-02", Path("/x.png"), human_score=None, artist="mentored")
+    with patch("fleet_dashboard.server.core.get_latest_art", return_value=unrated):
+        body = client.get("/api/art").json()
+    assert body["rated"] is False and body["artist"] is None and body["self_score"] is None
+    rated = ArtItem("t", 0.7, "X", "2026-10-02", Path("/x.png"), human_score=0.75, artist="mentored")
+    with patch("fleet_dashboard.server.core.get_latest_art", return_value=rated):
+        body = client.get("/api/art").json()
+    assert (body["artist"], body["self_score"], body["human_score"]) == ("mentored", 0.7, 0.75)

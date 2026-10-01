@@ -393,7 +393,7 @@
     </section>
 
     <section class="card span-7">
-      <h2>Latest AI Art <span class="source">~/iCloud/ai-artist</span></h2>
+      <h2>Latest AI Art <span class="source">two artists &middot; rate blind with /rate-art</span></h2>
       <div id="art-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
@@ -934,16 +934,27 @@ async function loadArt() {
       body.innerHTML = '<div class="empty-state">No generated art found yet.</div>';
       return;
     }
+    const stars = v => v == null ? '&ndash;' : (1 + 4 * v).toFixed(1);
+    const exp = Object.entries(a.experiment || {});
+    const board = exp.length ? `
+      <table style="margin-top:12px;font-size:12.5px;border-collapse:collapse;">
+        <tr style="color:var(--text-dim);"><td style="padding:2px 12px 2px 0;">Since Oct 1</td><td style="padding:2px 10px;">pieces</td><td style="padding:2px 10px;">rated</td><td style="padding:2px 10px;">you &#9733;</td><td style="padding:2px 10px;">it &#9733;</td></tr>
+        ${exp.map(([name, e]) => `<tr><td style="padding:2px 12px 2px 0;font-weight:600;">${name}${name === 'mentored' ? ' <span style="color:var(--text-dim);font-weight:400;">(learns from you)</span>' : ' <span style="color:var(--text-dim);font-weight:400;">(learns from itself)</span>'}</td>
+          <td style="padding:2px 10px;">${e.pieces}</td><td style="padding:2px 10px;">${e.rated}</td>
+          <td style="padding:2px 10px;">${e.mean_stars == null ? '&ndash;' : e.mean_stars.toFixed(1)}</td><td style="padding:2px 10px;">${e.mean_self_stars == null ? '&ndash;' : e.mean_self_stars.toFixed(1)}</td></tr>`).join('')}
+      </table>` : '<div class="art-sub" style="margin-top:10px;">Two artists from Oct 1: one learns from itself, one from your ratings.</div>';
     body.innerHTML = `
       <div class="art-card">
         <img src="${a.image_url}" alt="${a.title}">
         <div class="art-meta">
           <div class="art-title">${a.title}</div>
           <div class="art-sub">
-            ${a.self_score != null ? `<span>self-score ${a.self_score}</span>` : ''}
+            ${a.rated ? `<span>${a.artist}</span><span>you ${stars(a.human_score)}&#9733; &middot; it ${stars(a.self_score)}&#9733;</span>`
+              : '<span>unrated &middot; <code>/rate-art</code></span>'}
             ${a.interest ? `<span>${a.interest}</span>` : ''}
-            ${a.generated_at ? `<span>${fmtTime(a.generated_at)}</span>` : ''}
+            ${a.generated_at ? `<span>${new Date(a.generated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>` : ''}
           </div>
+          ${board}
         </div>
       </div>`;
   } catch (e) {

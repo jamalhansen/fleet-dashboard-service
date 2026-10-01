@@ -529,21 +529,24 @@ class ArtItem:
     interest: str | None
     generated_at: str | None
     image_path: Path
+    human_score: float | None = None
+    artist: str | None = None
 
 
-def get_latest_art(items_dir: str | Path = "~/iCloud/ai-artist/items") -> ArtItem | None:
-    """Never raises: a missing directory or malformed item note returns None."""
+def get_latest_art(items_dir: str | Path | list[str | Path] = "~/iCloud/ai-artist/items") -> ArtItem | None:
+    """The newest piece across one or more artists' items folders.
+
+    Never raises: a missing directory or malformed item note returns None.
+    """
     try:
-        items_path = Path(items_dir).expanduser()
-        if not items_path.exists():
-            return None
-        item_files = sorted(items_path.glob("*.md"))
+        dirs = [Path(d).expanduser() for d in (items_dir if isinstance(items_dir, list) else [items_dir])]
+        item_files = [f for d in dirs if d.exists() for f in d.glob("*.md")]
         if not item_files:
             return None
-        latest = item_files[-1]
+        latest = max(item_files, key=lambda f: (f.stem[:10], f.stat().st_mtime))
         post = frontmatter.load(latest)
 
-        images_dir = items_path.parent / "images"
+        images_dir = latest.parent.parent / "images"
         image_path = images_dir / f"{latest.stem}.png"
         if not image_path.exists():
             candidates = list(images_dir.glob(f"{latest.stem}.*"))
@@ -551,12 +554,15 @@ def get_latest_art(items_dir: str | Path = "~/iCloud/ai-artist/items") -> ArtIte
                 return None
             image_path = candidates[0]
 
+        human = post.metadata.get("human_score")
         return ArtItem(
             title=post.metadata.get("title") or latest.stem,
             self_score=post.metadata.get("self_score"),
             interest=post.metadata.get("interest"),
             generated_at=post.metadata.get("generated_at"),
             image_path=image_path,
+            human_score=float(human) if human not in (None, "", "null") else None,
+            artist=post.metadata.get("artist") or latest.parent.parent.name,
         )
     except Exception:  # noqa: BLE001 - best-effort; a malformed item note shouldn't break the page
         return None

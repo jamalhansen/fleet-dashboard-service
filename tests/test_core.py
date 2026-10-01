@@ -1140,3 +1140,15 @@ class TestGetFrontmatterValidation:
 
         keys = {b["key"] for b in result.content_todo}
         assert keys == {"auto_fixable"}
+
+
+def test_latest_art_spans_artists_and_reports_rating(tmp_path):
+    for artist, stem, human in (("ai-artist", "2026-10-01-a", "0.5"), ("ai-artist-mentored", "2026-10-02-b", "null")):
+        (tmp_path / artist / "items").mkdir(parents=True)
+        (tmp_path / artist / "images").mkdir()
+        (tmp_path / artist / "items" / f"{stem}.md").write_text(f"---\ntitle: {stem}\nself_score: 0.6\nhuman_score: {human}\n---\n")
+        (tmp_path / artist / "images" / f"{stem}.png").write_bytes(b"png")
+    dirs = [tmp_path / "ai-artist" / "items", tmp_path / "ai-artist-mentored" / "items"]
+    item = core.get_latest_art(dirs)
+    assert (item.title, item.artist, item.human_score) == ("2026-10-02-b", "ai-artist-mentored", None)
+    assert core.get_latest_art(dirs[:1]).human_score == 0.5

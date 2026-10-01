@@ -16,7 +16,8 @@ from . import core
 app = FastAPI(title="Fleet Dashboard")
 
 VAULT_PATH = os.environ.get("FLEET_DASHBOARD_VAULT_PATH") or str(Path.home() / "vaults" / "Contexta")
-ART_ITEMS_DIR = os.environ.get("FLEET_DASHBOARD_ART_ITEMS_DIR") or "~/iCloud/ai-artist/items"
+# Both artists of the 2026-10-01 experiment; colon-separated to override.
+ART_ITEMS_DIR = (os.environ.get("FLEET_DASHBOARD_ART_ITEMS_DIR") or "~/iCloud/ai-artist/items:~/iCloud/ai-artist-mentored/items").split(":")
 JAPANESE_TUTOR_URL = os.environ.get("JAPANESE_TUTOR_URL") or "http://127.0.0.1:8421"
 
 # Jamal's two Obsidian vaults with the ops/ structure vault-health and
@@ -246,13 +247,19 @@ def api_art():
     item = core.get_latest_art(ART_ITEMS_DIR)
     if not item:
         return {"available": False}
+    rated = item.human_score is not None
     return {
         "available": True,
         "title": item.title,
-        "self_score": item.self_score,
+        # Rating is blind: who made it and what it gave itself only show once you've rated it.
+        "rated": rated,
+        "artist": item.artist if rated else None,
+        "self_score": item.self_score if rated else None,
+        "human_score": item.human_score,
         "interest": item.interest,
         "generated_at": item.generated_at,
         "image_url": "/api/art/image",
+        "experiment": core.get_writing_practice().get("art_experiment") or {},
     }
 
 

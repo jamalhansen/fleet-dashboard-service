@@ -87,3 +87,49 @@ def test_prerender_fills_every_panel_without_javascript(monkeypatch):
         raise
     assert 'class="skeleton"' not in out
     assert "<script" not in out.lower()
+
+
+def test_publish_copies_with_scp_and_reports_success(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return type("R", (), {"returncode": 0, "stderr": ""})()
+
+    monkeypatch.setattr(snapshot.subprocess, "run", fake_run)
+    page = tmp_path / "fleet.html"
+    page.write_text("x")
+    assert snapshot.publish(page, "clifford:dashboard/index.html") is True
+    assert calls[0][0] == "scp" and calls[0][-2:] == [str(page), "clifford:dashboard/index.html"]
+    assert "BatchMode=yes" in calls[0]
+
+
+def test_publish_failure_is_reported_not_raised(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(
+        snapshot.subprocess, "run",
+        lambda cmd, **kw: type("R", (), {"returncode": 255, "stderr": "no route"})(),
+    )
+    assert snapshot.publish(tmp_path / "f.html", "clifford:x") is False
+    assert "no route" in capsys.readouterr().out
+
+    def boom(cmd, **kw):
+        raise snapshot.subprocess.TimeoutExpired(cmd, 60)
+
+    monkeypatch.setattr(snapshot.subprocess, "run", boom)
+    assert snapshot.publish(tmp_path / "f.html", "clifford:x") is False
+
+
+def test_main_publishes_only_when_target_is_set(monkeypatch, tmp_path):
+    out = tmp_path / "fleet.html"
+    monkeypatch.setenv("FLEET_DASHBOARD_SNAPSHOT_PATH", str(out))
+    monkeypatch.setattr(snapshot, "write_snapshot", lambda p: (p.write_text("x"), p)[1])
+    pushed = []
+    monkeypatch.setattr(snapshot, "publish", lambda p, t: pushed.append(t) or True)
+
+    monkeypatch.delenv("FLEET_DASHBOARD_PUBLISH_TO", raising=False)
+    snapshot.main()
+    assert pushed == []
+
+    monkeypatch.setenv("FLEET_DASHBOARD_PUBLISH_TO", "clifford:dashboard/index.html")
+    snapshot.main()
+    assert pushed == ["clifford:dashboard/index.html"]

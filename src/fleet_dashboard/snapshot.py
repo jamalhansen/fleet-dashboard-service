@@ -148,10 +148,34 @@ def write_snapshot(out: Path = DEFAULT_OUT, now: datetime | None = None) -> Path
     return out
 
 
+def publish(path: Path, target: str) -> bool:
+    """Copy the finished snapshot to `host:path` (scp, key auth) so another machine can serve it.
+
+    A failed push never fails the run: the local/iCloud copy is already written, and the
+    next scheduled run tries again. Returns whether the copy landed.
+    """
+    try:
+        result = subprocess.run(
+            ["scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", str(path), target],
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"publish to {target} failed: {e}")
+        return False
+    if result.returncode != 0:
+        print(f"publish to {target} failed: {result.stderr.strip() or result.returncode}")
+        return False
+    return True
+
+
 def main() -> None:
     out = Path(os.environ.get("FLEET_DASHBOARD_SNAPSHOT_PATH") or DEFAULT_OUT).expanduser()
     path = write_snapshot(out)
     print(f"wrote {path} ({path.stat().st_size / 1e6:.1f} MB)")
+    # e.g. clifford:dashboard/index.html -- the Raspberry Pi serves whatever lands there.
+    target = os.environ.get("FLEET_DASHBOARD_PUBLISH_TO")
+    if target and publish(path, target):
+        print(f"published to {target}")
 
 
 if __name__ == "__main__":

@@ -1152,3 +1152,25 @@ def test_latest_art_spans_artists_and_reports_rating(tmp_path):
     item = core.get_latest_art(dirs)
     assert (item.title, item.artist, item.human_score) == ("2026-10-02-b", "ai-artist-mentored", None)
     assert core.get_latest_art(dirs[:1]).human_score == 0.5
+
+
+def test_repo_health_security_marks_repo_unhealthy_and_exposes_counts(tmp_path):
+    """2026-10-04: repo-health-run adds a weekly pip-audit + gitleaks block."""
+    snap = tmp_path / "repo-health.json"
+    base = {"lint": {"ok": True}, "tests": {"ok": True}, "hooks": {"ok": True},
+            "git": {"has_remote": True}, "install": {"ok": True}}
+    snap.write_text(json.dumps({"total": 3, "healthy": 1, "repos": {
+        "vulnerable": {**base, "security": {"ok": False, "checked_at": "2026-10-04T12:00:00+00:00",
+                       "dependencies": {"ok": False, "vulns": 5, "packages": ["urllib3==2.6.3"]},
+                       "secrets": {"ok": True, "leaks": 0}}},
+        "leaky": {**base, "security": {"ok": False, "dependencies": {"ok": True, "vulns": 0},
+                  "secrets": {"ok": False, "leaks": 2}}},
+        "pre-security-snapshot": base,
+    }}))
+    h = core.get_repo_health(snap)
+    by = {r["name"]: r for r in h.repos}
+    assert by["vulnerable"]["ok"] is False and by["vulnerable"]["vulns"] == 5
+    assert by["vulnerable"]["vuln_packages"] == ["urllib3==2.6.3"]
+    assert by["leaky"]["ok"] is False and by["leaky"]["leaks"] == 2
+    assert by["pre-security-snapshot"]["ok"] is True  # older snapshots aren't failures
+    assert by["pre-security-snapshot"]["vulns"] == 0

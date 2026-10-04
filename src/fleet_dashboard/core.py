@@ -984,12 +984,18 @@ def get_repo_health(
             git = r.get("git", {})
             hooks = r.get("hooks", {})
             install = r.get("install", {})
+            # Weekly pip-audit + gitleaks (repo-health-run, 2026-10-04). Absent
+            # in snapshots written before then: treated as ok, not as a failure.
+            security = r.get("security", {})
+            deps = security.get("dependencies", {})
+            secrets = security.get("secrets", {})
             ok = (
                 bool(lint.get("ok"))
                 and bool(tests.get("ok"))
                 and bool(hooks.get("ok"))
                 and bool(git.get("has_remote", True))
                 and bool(install.get("ok", True))
+                and bool(security.get("ok", True))
             )
             repos.append(
                 {
@@ -1006,6 +1012,10 @@ def get_repo_health(
                     "has_remote": git.get("has_remote", True),
                     "install_ok": install.get("ok", True),
                     "install_stale_files": install.get("stale_files", 0),
+                    "vulns": deps.get("vulns", 0),
+                    "vuln_packages": deps.get("packages", []),
+                    "leaks": secrets.get("leaks", 0),
+                    "security_checked_at": security.get("checked_at"),
                 }
             )
         repos.sort(key=lambda r: (r["ok"], r["name"]))

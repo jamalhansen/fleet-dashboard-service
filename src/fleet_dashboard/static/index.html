@@ -668,6 +668,8 @@ async function loadRepoHealth() {
       if (!r.hooks_ok) flags.push(`<span class="pill warn"><span class="dot"></span>hooks outdated</span>`);
       if (!r.has_remote) flags.push(`<span class="pill warn"><span class="dot"></span>no remote</span>`);
       if (!r.install_ok) flags.push(`<span class="pill warn" title="uv tool install --reinstall ~/projects/local-first/${r.name}"><span class="dot"></span>installed copy stale (${r.install_stale_files} files)</span>`);
+      if (r.leaks > 0) flags.push(`<span class="pill bad"><span class="dot"></span>${r.leaks} secret${r.leaks === 1 ? '' : 's'} in git history</span>`);
+      if (r.vulns > 0) flags.push(`<span class="pill warn" title="${(r.vuln_packages || []).join(', ')} -- uv lock --upgrade"><span class="dot"></span>${r.vulns} known vuln${r.vulns === 1 ? '' : 's'}</span>`);
       if (r.dirty) flags.push(`<span class="pill"><span class="dot"></span>dirty</span>`);
       if (r.unpushed > 0) flags.push(`<span class="pill"><span class="dot"></span>${r.unpushed} unpushed</span>`);
       const status = r.ok

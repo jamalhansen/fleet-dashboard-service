@@ -1,0 +1,13 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 9 * * 1"   # weekly: new advisories appear without any commit
+  workflow_dispatch:
+jobs:
+  ci:
+    uses: jamalhansen/local-first-common/.github/workflows/python-ci.yml@main
+    with:
+      siblings: "tension-triage-dashboard"

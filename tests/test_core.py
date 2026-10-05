@@ -68,7 +68,9 @@ class TestGetFleetActivity:
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         conn = duckdb.connect(str(db))
-        conn.execute("CREATE TABLE processing_log (tool_name VARCHAR, success BOOLEAN, via_gateway BOOLEAN, created_at TIMESTAMP)")
+        conn.execute(
+            "CREATE TABLE processing_log (tool_name VARCHAR, success BOOLEAN, via_gateway BOOLEAN, created_at TIMESTAMP)"
+        )
         conn.execute("CREATE TABLE tools (id INTEGER, name VARCHAR)")
         conn.execute("CREATE TABLE fetch_log (tool_id INTEGER, success BOOLEAN, attempted_at TIMESTAMP)")
         conn.execute("CREATE TABLE api_call_log (tool_id INTEGER, success BOOLEAN, attempted_at TIMESTAMP)")
@@ -77,8 +79,7 @@ class TestGetFleetActivity:
             "VALUES ('older-tool', true, CURRENT_TIMESTAMP - INTERVAL 1 HOUR)"
         )
         conn.execute(
-            "INSERT INTO processing_log (tool_name, success, created_at) "
-            "VALUES ('newer-tool', true, CURRENT_TIMESTAMP)"
+            "INSERT INTO processing_log (tool_name, success, created_at) VALUES ('newer-tool', true, CURRENT_TIMESTAMP)"
         )
         conn.close()
         activity = core.get_fleet_activity()
@@ -121,9 +122,7 @@ class TestGetLaunchAgents:
     def test_filters_to_localfirst_prefix(self):
         fake = MagicMock()
         fake.stdout = (
-            "-\t0\tcom.localfirst.artist-agent\n"
-            "1234\t0\tcom.apple.something\n"
-            "5678\t0\tcom.localfirst.discovery-loop\n"
+            "-\t0\tcom.localfirst.artist-agent\n1234\t0\tcom.apple.something\n5678\t0\tcom.localfirst.discovery-loop\n"
         )
         with patch("fleet_dashboard.core.subprocess.run", return_value=fake):
             statuses = core.get_launch_agents()
@@ -197,7 +196,9 @@ class TestGetModelUsage:
             "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
             "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
-        conn.execute("INSERT INTO processing_log (tool_name, model, success) VALUES ('some-tool', NULL, true), ('other-tool', '', false)")
+        conn.execute(
+            "INSERT INTO processing_log (tool_name, model, success) VALUES ('some-tool', NULL, true), ('other-tool', '', false)"
+        )
         conn.close()
 
         assert core.get_model_usage() == []
@@ -296,9 +297,7 @@ class TestGetModelUsage:
             "CREATE TABLE processing_log (tool_name VARCHAR, model VARCHAR, provider VARCHAR, "
             "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
-        conn.execute(
-            "INSERT INTO processing_log (tool_name, model, success) VALUES ('old-tool', 'phi4-mini', true)"
-        )
+        conn.execute("INSERT INTO processing_log (tool_name, model, success) VALUES ('old-tool', 'phi4-mini', true)")
         conn.close()
 
         usage = core.get_model_usage()
@@ -364,11 +363,14 @@ class TestClassifyProvider:
 
     def test_known_prefix_splits_provider_and_model(self):
         assert core.classify_provider("ollama:phi4-mini") == ("ollama", "phi4-mini")
-        assert core.classify_provider("anthropic:claude-haiku-4-5-20251001") == ("anthropic", "claude-haiku-4-5-20251001")
+        assert core.classify_provider("anthropic:claude-haiku-4-5-20251001") == (
+            "anthropic",
+            "claude-haiku-4-5-20251001",
+        )
         assert core.classify_provider("mock:test-model") == ("mock", "test-model")
 
     def test_unrecognized_prefix_is_not_split(self):
-        """"llama3.2:3b" has a colon but "llama3.2" isn't a known provider
+        """ "llama3.2:3b" has a colon but "llama3.2" isn't a known provider
         name -- it's an Ollama tag, must not be misread as provider "llama3.2"."""
         assert core.classify_provider("llama3.2:3b") == ("ollama", "llama3.2:3b")
 
@@ -455,11 +457,14 @@ class TestGetFetchUsage:
     def test_groups_by_tool_and_domain(self, tmp_path, monkeypatch):
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
-        self._seed(db, [
-            ("http-retriever-service", "arxiv.org", True, 200),
-            ("http-retriever-service", "arxiv.org", True, 400),
-            ("http-retriever-service", "substackcdn.com", False, 100),
-        ])
+        self._seed(
+            db,
+            [
+                ("http-retriever-service", "arxiv.org", True, 200),
+                ("http-retriever-service", "arxiv.org", True, 400),
+                ("http-retriever-service", "substackcdn.com", False, 100),
+            ],
+        )
         usage = core.get_fetch_usage()
         by_domain = {u.domain: u for u in usage}
         assert by_domain["arxiv.org"].total == 2
@@ -471,11 +476,14 @@ class TestGetFetchUsage:
     def test_sorted_by_total_descending(self, tmp_path, monkeypatch):
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
-        self._seed(db, [
-            ("http-retriever-service", "small.com", True, 100),
-            ("http-retriever-service", "big.com", True, 100),
-            ("http-retriever-service", "big.com", True, 100),
-        ])
+        self._seed(
+            db,
+            [
+                ("http-retriever-service", "small.com", True, 100),
+                ("http-retriever-service", "big.com", True, 100),
+                ("http-retriever-service", "big.com", True, 100),
+            ],
+        )
         usage = core.get_fetch_usage()
         assert usage[0].domain == "big.com"
 
@@ -511,11 +519,14 @@ class TestGetApiCallUsage:
     def test_groups_by_tool_service_and_operation(self, tmp_path, monkeypatch):
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
-        self._seed(db, [
-            ("content-discovery-agent", "readwise", "list_highlights", True),
-            ("content-discovery-agent", "readwise", "list_highlights", False),
-            ("content-discovery-agent", "bluesky", "get_timeline", True),
-        ])
+        self._seed(
+            db,
+            [
+                ("content-discovery-agent", "readwise", "list_highlights", True),
+                ("content-discovery-agent", "readwise", "list_highlights", False),
+                ("content-discovery-agent", "bluesky", "get_timeline", True),
+            ],
+        )
         usage = core.get_api_call_usage()
         by_op = {(u.service, u.operation): u for u in usage}
         assert by_op[("readwise", "list_highlights")].total == 2
@@ -557,9 +568,7 @@ class TestGetLatestArt:
         images_dir = tmp_path / "images"
         items_dir.mkdir()
         images_dir.mkdir()
-        (items_dir / "2026-09-19-old.md").write_text(
-            "---\ntitle: Old piece\nself_score: 0.5\n---\nbody"
-        )
+        (items_dir / "2026-09-19-old.md").write_text("---\ntitle: Old piece\nself_score: 0.5\n---\nbody")
         (items_dir / "2026-09-20-new.md").write_text(
             "---\ntitle: New piece\nself_score: 0.8\ninterest: Testing\n---\nbody"
         )
@@ -726,23 +735,38 @@ class TestGetBlogValidation:
         assert result.available is False
 
     def test_reads_real_snapshot_and_totals_across_targets(self, tmp_path):
-        snapshot = self._snapshot(tmp_path, [
-            {
-                "name": "blog",
-                "summary": {"posts": 67, "posts_passed": 67, "posts_failed": 0,
-                            "blocks_passed": 181, "blocks_failed": 0, "blocks_skipped": 86},
-                "coverage": {"fully_covered": 8, "needs_attention": 35, "assertion_pct": 3},
-                "failed_posts": [],
-            },
-            {
-                "name": "vault",
-                "summary": {"posts": 137, "posts_passed": 97, "posts_failed": 40,
-                            "blocks_passed": 245, "blocks_failed": 85, "blocks_skipped": 121,
-                            "posts_skipped_by_status": 70},
-                "coverage": {"fully_covered": 8, "needs_attention": 97, "assertion_pct": 13},
-                "failed_posts": [{"slug": "03a-find-errors-with-grep", "errors": ["block 0 (bash): exit 1"]}],
-            },
-        ])
+        snapshot = self._snapshot(
+            tmp_path,
+            [
+                {
+                    "name": "blog",
+                    "summary": {
+                        "posts": 67,
+                        "posts_passed": 67,
+                        "posts_failed": 0,
+                        "blocks_passed": 181,
+                        "blocks_failed": 0,
+                        "blocks_skipped": 86,
+                    },
+                    "coverage": {"fully_covered": 8, "needs_attention": 35, "assertion_pct": 3},
+                    "failed_posts": [],
+                },
+                {
+                    "name": "vault",
+                    "summary": {
+                        "posts": 137,
+                        "posts_passed": 97,
+                        "posts_failed": 40,
+                        "blocks_passed": 245,
+                        "blocks_failed": 85,
+                        "blocks_skipped": 121,
+                        "posts_skipped_by_status": 70,
+                    },
+                    "coverage": {"fully_covered": 8, "needs_attention": 97, "assertion_pct": 13},
+                    "failed_posts": [{"slug": "03a-find-errors-with-grep", "errors": ["block 0 (bash): exit 1"]}],
+                },
+            ],
+        )
         result = core.get_blog_validation(snapshot)
         assert result.available is True
         assert result.generated_at == "2026-09-23T12:00:00Z"
@@ -758,9 +782,12 @@ class TestGetBlogValidation:
 
     def test_failed_posts_are_capped_with_a_more_count(self, tmp_path):
         failed = [{"slug": f"post-{i}", "errors": []} for i in range(25)]
-        snapshot = self._snapshot(tmp_path, [
-            {"name": "vault", "summary": {"posts": 25, "posts_failed": 25}, "coverage": {}, "failed_posts": failed},
-        ])
+        snapshot = self._snapshot(
+            tmp_path,
+            [
+                {"name": "vault", "summary": {"posts": 25, "posts_failed": 25}, "coverage": {}, "failed_posts": failed},
+            ],
+        )
         result = core.get_blog_validation(snapshot)
         assert len(result.targets[0]["failed_posts"]) == 20
         assert result.targets[0]["more_failed"] == 5
@@ -778,25 +805,29 @@ class TestGetRepoHealth:
 
     def test_reads_real_snapshot(self, tmp_path):
         snapshot = tmp_path / "snapshot.json"
-        snapshot.write_text(json.dumps({
-            "generated_at": "2026-09-20T12:00:00Z",
-            "total": 2,
-            "healthy": 1,
-            "repos": {
-                "good-repo": {
-                    "lint": {"ok": True, "error_count": 0},
-                    "tests": {"ok": True, "passed": 10, "failed": 0},
-                    "git": {"dirty": False, "unpushed": 0, "has_remote": True},
-                    "hooks": {"ok": True, "installed": True},
-                },
-                "bad-repo": {
-                    "lint": {"ok": False, "error_count": 3},
-                    "tests": {"ok": False, "passed": 0, "failed": 1},
-                    "git": {"dirty": True, "unpushed": 2, "has_remote": True},
-                    "hooks": {"ok": True, "installed": True},
-                },
-            },
-        }))
+        snapshot.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-09-20T12:00:00Z",
+                    "total": 2,
+                    "healthy": 1,
+                    "repos": {
+                        "good-repo": {
+                            "lint": {"ok": True, "error_count": 0},
+                            "tests": {"ok": True, "passed": 10, "failed": 0},
+                            "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+                            "hooks": {"ok": True, "installed": True},
+                        },
+                        "bad-repo": {
+                            "lint": {"ok": False, "error_count": 3},
+                            "tests": {"ok": False, "passed": 0, "failed": 1},
+                            "git": {"dirty": True, "unpushed": 2, "has_remote": True},
+                            "hooks": {"ok": True, "installed": True},
+                        },
+                    },
+                }
+            )
+        )
         result = core.get_repo_health(snapshot)
         assert result.available is True
         assert result.total == 2
@@ -805,25 +836,29 @@ class TestGetRepoHealth:
 
     def test_unhealthy_repos_sorted_first(self, tmp_path):
         snapshot = tmp_path / "snapshot.json"
-        snapshot.write_text(json.dumps({
-            "generated_at": "x",
-            "total": 2,
-            "healthy": 1,
-            "repos": {
-                "a-good-repo": {
-                    "lint": {"ok": True, "error_count": 0},
-                    "tests": {"ok": True, "passed": 1, "failed": 0},
-                    "git": {"dirty": False, "unpushed": 0, "has_remote": True},
-                    "hooks": {"ok": True, "installed": True},
-                },
-                "z-bad-repo": {
-                    "lint": {"ok": False, "error_count": 1},
-                    "tests": {"ok": True, "passed": 1, "failed": 0},
-                    "git": {"dirty": False, "unpushed": 0, "has_remote": True},
-                    "hooks": {"ok": True, "installed": True},
-                },
-            },
-        }))
+        snapshot.write_text(
+            json.dumps(
+                {
+                    "generated_at": "x",
+                    "total": 2,
+                    "healthy": 1,
+                    "repos": {
+                        "a-good-repo": {
+                            "lint": {"ok": True, "error_count": 0},
+                            "tests": {"ok": True, "passed": 1, "failed": 0},
+                            "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+                            "hooks": {"ok": True, "installed": True},
+                        },
+                        "z-bad-repo": {
+                            "lint": {"ok": False, "error_count": 1},
+                            "tests": {"ok": True, "passed": 1, "failed": 0},
+                            "git": {"dirty": False, "unpushed": 0, "has_remote": True},
+                            "hooks": {"ok": True, "installed": True},
+                        },
+                    },
+                }
+            )
+        )
         result = core.get_repo_health(snapshot)
         assert result.repos[0]["name"] == "z-bad-repo"
         assert result.repos[0]["ok"] is False
@@ -839,19 +874,23 @@ class TestGetRepoHealth:
         with no remote is unbacked, at risk of being lost, regardless of
         how clean its lint/tests/hooks are."""
         snapshot = tmp_path / "snapshot.json"
-        snapshot.write_text(json.dumps({
-            "generated_at": "x",
-            "total": 1,
-            "healthy": 0,
-            "repos": {
-                "local-only-repo": {
-                    "lint": {"ok": True, "error_count": 0},
-                    "tests": {"ok": True, "passed": 5, "failed": 0},
-                    "git": {"dirty": False, "unpushed": 0, "has_remote": False},
-                    "hooks": {"ok": True, "installed": True},
-                },
-            },
-        }))
+        snapshot.write_text(
+            json.dumps(
+                {
+                    "generated_at": "x",
+                    "total": 1,
+                    "healthy": 0,
+                    "repos": {
+                        "local-only-repo": {
+                            "lint": {"ok": True, "error_count": 0},
+                            "tests": {"ok": True, "passed": 5, "failed": 0},
+                            "git": {"dirty": False, "unpushed": 0, "has_remote": False},
+                            "hooks": {"ok": True, "installed": True},
+                        },
+                    },
+                }
+            )
+        )
         result = core.get_repo_health(snapshot)
         assert result.repos[0]["ok"] is False
         assert result.repos[0]["has_remote"] is False
@@ -866,13 +905,22 @@ class TestGetRepoHealth:
             "hooks": {"ok": True, "installed": True},
         }
         snapshot = tmp_path / "snapshot.json"
-        snapshot.write_text(json.dumps({
-            "generated_at": "x", "total": 2, "healthy": 1,
-            "repos": {
-                "stale-tool": {**clean, "install": {"ok": False, "installed": True, "editable": False, "stale_files": 3}},
-                "older-snapshot-without-install-key": clean,
-            },
-        }))
+        snapshot.write_text(
+            json.dumps(
+                {
+                    "generated_at": "x",
+                    "total": 2,
+                    "healthy": 1,
+                    "repos": {
+                        "stale-tool": {
+                            **clean,
+                            "install": {"ok": False, "installed": True, "editable": False, "stale_files": 3},
+                        },
+                        "older-snapshot-without-install-key": clean,
+                    },
+                }
+            )
+        )
         by_name = {r["name"]: r for r in core.get_repo_health(snapshot).repos}
         assert by_name["stale-tool"]["ok"] is False
         assert by_name["stale-tool"]["install_ok"] is False
@@ -909,10 +957,22 @@ class TestGetGatewayRoutingAudit:
         assert result.available is False
 
     def test_gateway_category_with_confirmed_activity_is_ok(self, tmp_path):
-        snapshot = self._snapshot(tmp_path, {
-            "obsidian-vault-auto-tagger": {"gateway_routing": {"category": "gateway"}},
-        })
-        usage = [core.ModelUsage(tool_name="obsidian-vault-auto-tagger", model="qwen2.5:7b", provider="ollama", total=5, failures=0, via_gateway=True)]
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "obsidian-vault-auto-tagger": {"gateway_routing": {"category": "gateway"}},
+            },
+        )
+        usage = [
+            core.ModelUsage(
+                tool_name="obsidian-vault-auto-tagger",
+                model="qwen2.5:7b",
+                provider="ollama",
+                total=5,
+                failures=0,
+                via_gateway=True,
+            )
+        ]
         with patch("fleet_dashboard.core.get_model_usage", return_value=usage):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].status == "ok"
@@ -922,9 +982,12 @@ class TestGetGatewayRoutingAudit:
         window shows via_gateway=True for it -- could just mean it hasn't
         run recently, or could mean something's actually broken; either way
         it's not confirmed, so it shouldn't read as silently fine."""
-        snapshot = self._snapshot(tmp_path, {
-            "some-tool": {"gateway_routing": {"category": "gateway"}},
-        })
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "some-tool": {"gateway_routing": {"category": "gateway"}},
+            },
+        )
         with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].status == "unconfirmed"
@@ -934,18 +997,28 @@ class TestGetGatewayRoutingAudit:
         reason -- flag it for review even if it has real (non-gateway)
         activity logged, since the concern is architectural, not whether
         it's running."""
-        snapshot = self._snapshot(tmp_path, {
-            "pebble": {"gateway_routing": {"category": "direct_unclassified"}},
-        })
-        usage = [core.ModelUsage(tool_name="pebble", model="qwen2.5:3b", provider="ollama", total=12, failures=0, via_gateway=False)]
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "pebble": {"gateway_routing": {"category": "direct_unclassified"}},
+            },
+        )
+        usage = [
+            core.ModelUsage(
+                tool_name="pebble", model="qwen2.5:3b", provider="ollama", total=12, failures=0, via_gateway=False
+            )
+        ]
         with patch("fleet_dashboard.core.get_model_usage", return_value=usage):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].status == "review"
 
     def test_direct_pydantic_ai_is_expected_direct(self, tmp_path):
-        snapshot = self._snapshot(tmp_path, {
-            "persona-counsel": {"gateway_routing": {"category": "direct_pydantic_ai"}},
-        })
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "persona-counsel": {"gateway_routing": {"category": "direct_pydantic_ai"}},
+            },
+        )
         with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].status == "expected_direct"
@@ -954,39 +1027,65 @@ class TestGetGatewayRoutingAudit:
         """pebble (2026-09-22): resolve_provider(..., use_gateway=False) for
         a documented reason (must stay local) -- as deliberate as the
         pydantic-ai exception, just a different mechanism."""
-        snapshot = self._snapshot(tmp_path, {
-            "pebble": {"gateway_routing": {"category": "direct_forced"}},
-        })
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "pebble": {"gateway_routing": {"category": "direct_forced"}},
+            },
+        )
         with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].status == "expected_direct"
 
     def test_none_category_is_no_llm_calls(self, tmp_path):
-        snapshot = self._snapshot(tmp_path, {
-            "vault-query": {"gateway_routing": {"category": "none"}},
-        })
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "vault-query": {"gateway_routing": {"category": "none"}},
+            },
+        )
         with patch("fleet_dashboard.core.get_model_usage", return_value=[]):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].status == "no_llm_calls"
 
     def test_review_and_unconfirmed_sort_first(self, tmp_path):
-        snapshot = self._snapshot(tmp_path, {
-            "z-fine-tool": {"gateway_routing": {"category": "gateway"}},
-            "a-review-tool": {"gateway_routing": {"category": "direct_unclassified"}},
-        })
-        usage = [core.ModelUsage(tool_name="z-fine-tool", model="m", provider="ollama", total=1, failures=0, via_gateway=True)]
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "z-fine-tool": {"gateway_routing": {"category": "gateway"}},
+                "a-review-tool": {"gateway_routing": {"category": "direct_unclassified"}},
+            },
+        )
+        usage = [
+            core.ModelUsage(
+                tool_name="z-fine-tool", model="m", provider="ollama", total=1, failures=0, via_gateway=True
+            )
+        ]
         with patch("fleet_dashboard.core.get_model_usage", return_value=usage):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].tool_name == "a-review-tool"
         assert result.entries[0].status == "review"
 
     def test_last_call_wired_from_fleet_activity(self, tmp_path):
-        snapshot = self._snapshot(tmp_path, {
-            "obsidian-vault-auto-tagger": {"gateway_routing": {"category": "gateway"}},
-        })
-        activity = [core.ToolActivity(tool_name="obsidian-vault-auto-tagger", total=5, failures=0, last_call="2026-09-21 07:00:00", tables=["processing_log"])]
-        with patch("fleet_dashboard.core.get_model_usage", return_value=[]), \
-             patch("fleet_dashboard.core.get_fleet_activity", return_value=activity):
+        snapshot = self._snapshot(
+            tmp_path,
+            {
+                "obsidian-vault-auto-tagger": {"gateway_routing": {"category": "gateway"}},
+            },
+        )
+        activity = [
+            core.ToolActivity(
+                tool_name="obsidian-vault-auto-tagger",
+                total=5,
+                failures=0,
+                last_call="2026-09-21 07:00:00",
+                tables=["processing_log"],
+            )
+        ]
+        with (
+            patch("fleet_dashboard.core.get_model_usage", return_value=[]),
+            patch("fleet_dashboard.core.get_fleet_activity", return_value=activity),
+        ):
             result = core.get_gateway_routing_audit(snapshot)
         assert result.entries[0].last_call == "2026-09-21 07:00:00"
 
@@ -1146,7 +1245,9 @@ def test_latest_art_spans_artists_and_reports_rating(tmp_path):
     for artist, stem, human in (("ai-artist", "2026-10-01-a", "0.5"), ("ai-artist-mentored", "2026-10-02-b", "null")):
         (tmp_path / artist / "items").mkdir(parents=True)
         (tmp_path / artist / "images").mkdir()
-        (tmp_path / artist / "items" / f"{stem}.md").write_text(f"---\ntitle: {stem}\nself_score: 0.6\nhuman_score: {human}\n---\n")
+        (tmp_path / artist / "items" / f"{stem}.md").write_text(
+            f"---\ntitle: {stem}\nself_score: 0.6\nhuman_score: {human}\n---\n"
+        )
         (tmp_path / artist / "images" / f"{stem}.png").write_bytes(b"png")
     dirs = [tmp_path / "ai-artist" / "items", tmp_path / "ai-artist-mentored" / "items"]
     item = core.get_latest_art(dirs)
@@ -1157,16 +1258,41 @@ def test_latest_art_spans_artists_and_reports_rating(tmp_path):
 def test_repo_health_security_marks_repo_unhealthy_and_exposes_counts(tmp_path):
     """2026-10-04: repo-health-run adds a weekly pip-audit + gitleaks block."""
     snap = tmp_path / "repo-health.json"
-    base = {"lint": {"ok": True}, "tests": {"ok": True}, "hooks": {"ok": True},
-            "git": {"has_remote": True}, "install": {"ok": True}}
-    snap.write_text(json.dumps({"total": 3, "healthy": 1, "repos": {
-        "vulnerable": {**base, "security": {"ok": False, "checked_at": "2026-10-04T12:00:00+00:00",
-                       "dependencies": {"ok": False, "vulns": 5, "packages": ["urllib3==2.6.3"]},
-                       "secrets": {"ok": True, "leaks": 0}}},
-        "leaky": {**base, "security": {"ok": False, "dependencies": {"ok": True, "vulns": 0},
-                  "secrets": {"ok": False, "leaks": 2}}},
-        "pre-security-snapshot": base,
-    }}))
+    base = {
+        "lint": {"ok": True},
+        "tests": {"ok": True},
+        "hooks": {"ok": True},
+        "git": {"has_remote": True},
+        "install": {"ok": True},
+    }
+    snap.write_text(
+        json.dumps(
+            {
+                "total": 3,
+                "healthy": 1,
+                "repos": {
+                    "vulnerable": {
+                        **base,
+                        "security": {
+                            "ok": False,
+                            "checked_at": "2026-10-04T12:00:00+00:00",
+                            "dependencies": {"ok": False, "vulns": 5, "packages": ["urllib3==2.6.3"]},
+                            "secrets": {"ok": True, "leaks": 0},
+                        },
+                    },
+                    "leaky": {
+                        **base,
+                        "security": {
+                            "ok": False,
+                            "dependencies": {"ok": True, "vulns": 0},
+                            "secrets": {"ok": False, "leaks": 2},
+                        },
+                    },
+                    "pre-security-snapshot": base,
+                },
+            }
+        )
+    )
     h = core.get_repo_health(snap)
     by = {r["name"]: r for r in h.repos}
     assert by["vulnerable"]["ok"] is False and by["vulnerable"]["vulns"] == 5

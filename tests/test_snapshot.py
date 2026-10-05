@@ -30,9 +30,15 @@ def test_collect_keys_match_the_urls_the_page_builds(monkeypatch):
     def writing():
         return {"ok": True}
 
-    monkeypatch.setattr(snapshot, "_routes", lambda: {
-        "/api/fleet": fleet, "/api/tensions": tensions, "/api/writing": writing,
-    })
+    monkeypatch.setattr(
+        snapshot,
+        "_routes",
+        lambda: {
+            "/api/fleet": fleet,
+            "/api/tensions": tensions,
+            "/api/writing": writing,
+        },
+    )
     data = snapshot.collect(["24", "168"], ["Contexta", "KeySix"])
     assert data == {
         "/api/fleet?lookback_hours=24": {"h": 24.0},
@@ -44,7 +50,9 @@ def test_collect_keys_match_the_urls_the_page_builds(monkeypatch):
 
 
 def test_render_injects_data_note_and_hides_live_controls():
-    page = snapshot.render(INDEX_HTML, {"/api/writing": {"title": "</script>"}}, datetime(2026, 9, 25, 7, 14, tzinfo=UTC))
+    page = snapshot.render(
+        INDEX_HTML, {"/api/writing": {"title": "</script>"}}, datetime(2026, 9, 25, 7, 14, tzinfo=UTC)
+    )
     assert "Snapshot from Fri Sep 25, 7:14 AM" in page
     assert "#updated-at, #refresh-btn { display: none; }" in page
     shim = page.index("window.__SNAPSHOT__")
@@ -106,7 +114,8 @@ def test_publish_copies_with_scp_and_reports_success(monkeypatch, tmp_path):
 
 def test_publish_failure_is_reported_not_raised(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
-        snapshot.subprocess, "run",
+        snapshot.subprocess,
+        "run",
         lambda cmd, **kw: type("R", (), {"returncode": 255, "stderr": "no route"})(),
     )
     assert snapshot.publish(tmp_path / "f.html", "clifford:x") is False
@@ -145,8 +154,7 @@ def test_render_sets_the_tutor_url_for_the_snapshot(monkeypatch):
 
 def test_tutor_url_falls_back_to_null_without_a_hostname(monkeypatch):
     monkeypatch.delenv("FLEET_DASHBOARD_TUTOR_URL", raising=False)
-    monkeypatch.setattr(snapshot.subprocess, "run",
-                        lambda *a, **k: type("R", (), {"returncode": 1, "stdout": ""})())
+    monkeypatch.setattr(snapshot.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stdout": ""})())
     assert snapshot.tutor_ui_url() is None
     page = snapshot.render(INDEX_HTML, {}, datetime(2026, 10, 5, 7, 0, tzinfo=UTC))
     assert "window.JAPANESE_TUTOR_UI_URL = null;" in page

@@ -9,10 +9,16 @@ client = TestClient(app)
 
 
 def test_fleet_endpoint_shape():
-    activity = [core.ToolActivity(tool_name="my-tool", total=5, failures=1, last_call="2026-09-20", tables=["processing_log"])]
-    services = [core.ServiceStatus(label="com.localfirst.my-tool", running=True, pid=1, keep_alive=False, last_exit_code=0)]
-    with patch("fleet_dashboard.server.core.get_fleet_activity", return_value=activity), \
-         patch("fleet_dashboard.server.core.get_launch_agents", return_value=services):
+    activity = [
+        core.ToolActivity(tool_name="my-tool", total=5, failures=1, last_call="2026-09-20", tables=["processing_log"])
+    ]
+    services = [
+        core.ServiceStatus(label="com.localfirst.my-tool", running=True, pid=1, keep_alive=False, last_exit_code=0)
+    ]
+    with (
+        patch("fleet_dashboard.server.core.get_fleet_activity", return_value=activity),
+        patch("fleet_dashboard.server.core.get_launch_agents", return_value=services),
+    ):
         resp = client.get("/api/fleet")
     assert resp.status_code == 200
     body = resp.json()
@@ -23,15 +29,19 @@ def test_fleet_endpoint_shape():
 
 def test_models_endpoint_shape():
     usage = [
-        core.ModelUsage(tool_name="japanese-tutor", model="phi4-mini", provider="ollama", total=8, failures=2, via_gateway=True),
+        core.ModelUsage(
+            tool_name="japanese-tutor", model="phi4-mini", provider="ollama", total=8, failures=2, via_gateway=True
+        ),
         core.ModelUsage(tool_name="japanese-tutor", model="deepseek-chat", provider="deepseek", total=2, failures=0),
     ]
     by_provider = [
         core.ProviderUsage(provider="ollama", total=8, failures=2, tool_count=1, model_count=1),
         core.ProviderUsage(provider="deepseek", total=2, failures=0, tool_count=1, model_count=1),
     ]
-    with patch("fleet_dashboard.server.core.get_model_usage", return_value=usage), \
-         patch("fleet_dashboard.server.core.get_provider_usage", return_value=by_provider):
+    with (
+        patch("fleet_dashboard.server.core.get_model_usage", return_value=usage),
+        patch("fleet_dashboard.server.core.get_provider_usage", return_value=by_provider),
+    ):
         resp = client.get("/api/models")
     assert resp.status_code == 200
     body = resp.json()
@@ -49,7 +59,14 @@ def test_models_endpoint_shape():
 
 def test_fetches_endpoint_shape():
     usage = [
-        core.FetchUsage(tool_name="http-retriever-service", domain="arxiv.org", total=12, failures=1, avg_duration_ms=250.4, last_call="2026-09-21 07:07:42"),
+        core.FetchUsage(
+            tool_name="http-retriever-service",
+            domain="arxiv.org",
+            total=12,
+            failures=1,
+            avg_duration_ms=250.4,
+            last_call="2026-09-21 07:07:42",
+        ),
     ]
     with patch("fleet_dashboard.server.core.get_fetch_usage", return_value=usage):
         resp = client.get("/api/fetches")
@@ -63,7 +80,14 @@ def test_fetches_endpoint_shape():
 
 def test_api_calls_endpoint_shape():
     usage = [
-        core.ApiCallUsage(tool_name="content-discovery-agent", service="readwise", operation="list_highlights", total=5, failures=0, last_call="2026-09-21 07:00:00"),
+        core.ApiCallUsage(
+            tool_name="content-discovery-agent",
+            service="readwise",
+            operation="list_highlights",
+            total=5,
+            failures=0,
+            last_call="2026-09-21 07:00:00",
+        ),
     ]
     with patch("fleet_dashboard.server.core.get_api_call_usage", return_value=usage):
         resp = client.get("/api/api-calls")
@@ -83,7 +107,9 @@ def test_tensions_endpoint_shape():
 
 
 def test_vault_health_endpoint_shape():
-    health = core.VaultHealth(observations_pending=7, inbox_count=153, inbox_oldest_days=12.345, last_health_check="2026-09-06")
+    health = core.VaultHealth(
+        observations_pending=7, inbox_count=153, inbox_oldest_days=12.345, last_health_check="2026-09-06"
+    )
     with patch("fleet_dashboard.server.core.get_vault_health", return_value=health):
         resp = client.get("/api/vault-health")
     assert resp.status_code == 200
@@ -138,9 +164,20 @@ def test_repo_health_endpoint_available():
         generated_at="2026-09-20T12:00:00Z",
         total=2,
         healthy=1,
-        repos=[{"name": "bad-repo", "ok": False, "lint_ok": False, "lint_errors": 3,
-                "tests_ok": True, "tests_passed": 1, "tests_failed": 0,
-                "hooks_ok": True, "dirty": False, "unpushed": 0}],
+        repos=[
+            {
+                "name": "bad-repo",
+                "ok": False,
+                "lint_ok": False,
+                "lint_errors": 3,
+                "tests_ok": True,
+                "tests_passed": 1,
+                "tests_failed": 0,
+                "hooks_ok": True,
+                "dirty": False,
+                "unpushed": 0,
+            }
+        ],
     )
     with patch("fleet_dashboard.server.core.get_repo_health", return_value=summary):
         resp = client.get("/api/repo-health")
@@ -179,8 +216,12 @@ def test_writing_endpoint_unavailable():
 
 def test_writing_endpoint_available():
     cadence = core.WritingCadence(
-        available=True, last_published="2026-07-24", last_published_title="Go Hybrid", days_since_last=62,
-        weeks=[{"week_of": "2026-09-21", "posts": 0}], weeks_on_target=0,
+        available=True,
+        last_published="2026-07-24",
+        last_published_title="Go Hybrid",
+        days_since_last=62,
+        weeks=[{"week_of": "2026-09-21", "posts": 0}],
+        weeks_on_target=0,
         pipeline={"draft": 1, "outline": 33, "idea": 12, "brainstorm": 25},
         freshest_draft={"name": "my-test-suite-tried-to-brew-install", "modified": "2026-09-24"},
     )
@@ -202,15 +243,26 @@ def test_blog_validation_endpoint_unavailable():
 
 def test_blog_validation_endpoint_available():
     target = {
-        "name": "vault", "posts": 137, "posts_passed": 97, "posts_failed": 40,
-        "blocks_passed": 245, "blocks_failed": 85, "blocks_skipped": 121,
-        "fully_covered": 8, "needs_attention": 97, "assertion_pct": 13,
+        "name": "vault",
+        "posts": 137,
+        "posts_passed": 97,
+        "posts_failed": 40,
+        "blocks_passed": 245,
+        "blocks_failed": 85,
+        "blocks_skipped": 121,
+        "fully_covered": 8,
+        "needs_attention": 97,
+        "assertion_pct": 13,
         "failed_posts": [{"slug": "03a-find-errors-with-grep", "errors": ["block 0 (bash): exit 1"]}],
         "more_failed": 0,
     }
     summary = core.BlogValidationSummary(
-        available=True, generated_at="2026-09-23T12:00:00Z", targets=[target],
-        posts=137, posts_failed=40, blocks_failed=85,
+        available=True,
+        generated_at="2026-09-23T12:00:00Z",
+        targets=[target],
+        posts=137,
+        posts_failed=40,
+        blocks_failed=85,
     )
     with patch("fleet_dashboard.server.core.get_blog_validation", return_value=summary):
         resp = client.get("/api/blog-validation")
@@ -232,10 +284,15 @@ def test_frontmatter_validation_endpoint_unavailable():
 
 def test_frontmatter_validation_endpoint_available():
     summary = core.FrontmatterValidationSummary(
-        available=True, generated_at="2026-09-20T12:00:00Z", total=10, invalid_count=2,
+        available=True,
+        generated_at="2026-09-20T12:00:00Z",
+        total=10,
+        invalid_count=2,
         invalid_files=[{"file": "a.md", "errors": ["x"]}],
         error_summary=[{"error": "x", "count": 2, "files": ["a.md", "b.md"], "more": 0}],
-        content_todo=[{"key": "needs_status", "label": "Needs a status decision", "count": 1, "files": ["a.md"], "more": 0}],
+        content_todo=[
+            {"key": "needs_status", "label": "Needs a status decision", "count": 1, "files": ["a.md"], "more": 0}
+        ],
     )
     with patch("fleet_dashboard.server.core.get_frontmatter_validation", return_value=summary):
         resp = client.get("/api/frontmatter-validation")
@@ -245,7 +302,9 @@ def test_frontmatter_validation_endpoint_available():
     assert body["invalid_count"] == 2
     assert body["invalid_files"] == [{"file": "a.md", "errors": ["x"]}]
     assert body["error_summary"] == [{"error": "x", "count": 2, "files": ["a.md", "b.md"], "more": 0}]
-    assert body["content_todo"] == [{"key": "needs_status", "label": "Needs a status decision", "count": 1, "files": ["a.md"], "more": 0}]
+    assert body["content_todo"] == [
+        {"key": "needs_status", "label": "Needs a status decision", "count": 1, "files": ["a.md"], "more": 0}
+    ]
 
 
 def test_art_endpoint_no_art_available():

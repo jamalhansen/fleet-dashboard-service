@@ -7,6 +7,7 @@ unchanged. The page is then rendered once in headless Chromium and saved with it
 scripts stripped: iOS opens a local HTML file without running JavaScript, so the
 file has to be finished HTML. The file is overwritten each run.
 """
+
 from __future__ import annotations
 
 import base64
@@ -38,7 +39,8 @@ def lookback_options(html: str) -> list[str]:
 
 def _routes() -> dict[str, Callable]:
     return {
-        r.path: r.endpoint for r in server.app.routes
+        r.path: r.endpoint
+        for r in server.app.routes
         if isinstance(r, APIRoute) and "GET" in r.methods and r.path != ART_IMAGE_PATH
     }
 
@@ -65,7 +67,8 @@ def art_data_url(image: Path, max_px: int = ART_MAX_PX) -> str:
         out = Path(tmp) / "art.jpg"
         proc = subprocess.run(
             ["sips", "-Z", str(max_px), "-s", "format", "jpeg", str(image), "--out", str(out)],
-            capture_output=True, check=False,
+            capture_output=True,
+            check=False,
         )
         if proc.returncode == 0 and out.exists():
             payload, mime = out.read_bytes(), "image/jpeg"
@@ -138,9 +141,7 @@ def prerender(page: str, timeout_ms: int = 20_000) -> str:
             tab.set_content(page, wait_until="load")
             # Every panel starts as a .skeleton placeholder; wait until all are replaced.
             # A timeout raises, so a half-rendered page never overwrites the last good one.
-            tab.wait_for_function(
-                "() => document.querySelectorAll('.skeleton').length === 0", timeout=timeout_ms
-            )
+            tab.wait_for_function("() => document.querySelectorAll('.skeleton').length === 0", timeout=timeout_ms)
             html = tab.content()
         finally:
             browser.close()
@@ -179,7 +180,10 @@ def publish(path: Path, target: str) -> bool:
     try:
         result = subprocess.run(
             ["scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", str(path), target],
-            capture_output=True, text=True, timeout=60, check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         print(f"publish to {target} failed: {e}")

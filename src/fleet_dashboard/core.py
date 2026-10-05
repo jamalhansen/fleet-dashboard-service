@@ -1,6 +1,7 @@
 """Data-gathering for the dashboard. Every function here is read-only and
 never raises -- a data source being unreachable (japanese-tutor not running,
 no tensions yet) degrades that section, not the whole page."""
+
 from __future__ import annotations
 
 import json
@@ -234,7 +235,9 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
         else:
             provider, model = classify_provider(raw_model)
         key = (tool_name, provider, model)
-        entry = merged.setdefault(key, ModelUsage(tool_name=tool_name, model=model, provider=provider, total=0, failures=0))
+        entry = merged.setdefault(
+            key, ModelUsage(tool_name=tool_name, model=model, provider=provider, total=0, failures=0)
+        )
         entry.total += total
         entry.failures += failures or 0
         entry.via_gateway = entry.via_gateway or bool(via_gateway)
@@ -314,7 +317,14 @@ def get_fetch_usage(lookback_hours: float = 24 * 7) -> list[FetchUsage]:
         return []
 
     usage = [
-        FetchUsage(tool_name=tool_name, domain=domain or "(unknown)", total=total, failures=failures or 0, avg_duration_ms=avg_duration_ms, last_call=str(last_call) if last_call else None)
+        FetchUsage(
+            tool_name=tool_name,
+            domain=domain or "(unknown)",
+            total=total,
+            failures=failures or 0,
+            avg_duration_ms=avg_duration_ms,
+            last_call=str(last_call) if last_call else None,
+        )
         for tool_name, domain, total, failures, avg_duration_ms, last_call in rows
     ]
     return sorted(usage, key=lambda u: u.total, reverse=True)
@@ -366,7 +376,14 @@ def get_api_call_usage(lookback_hours: float = 24 * 7) -> list[ApiCallUsage]:
         return []
 
     usage = [
-        ApiCallUsage(tool_name=tool_name, service=service, operation=operation, total=total, failures=failures or 0, last_call=str(last_call) if last_call else None)
+        ApiCallUsage(
+            tool_name=tool_name,
+            service=service,
+            operation=operation,
+            total=total,
+            failures=failures or 0,
+            last_call=str(last_call) if last_call else None,
+        )
         for tool_name, service, operation, total, failures, last_call in rows
     ]
     return sorted(usage, key=lambda u: u.total, reverse=True)
@@ -815,10 +832,12 @@ def get_writing_cadence(
         for i in range(_WEEKS_SHOWN - 1, -1, -1):
             start = week_start - timedelta(weeks=i)
             end = start + timedelta(days=7)
-            weeks.append({
-                "week_of": start.date().isoformat(),
-                "posts": sum(1 for d, _ in published if start <= d < end),
-            })
+            weeks.append(
+                {
+                    "week_of": start.date().isoformat(),
+                    "posts": sum(1 for d, _ in published if start <= d < end),
+                }
+            )
 
         pipeline = dict.fromkeys(_PIPELINE_STATUSES, 0)
         freshest: tuple[float, Path, str] | None = None
@@ -1104,7 +1123,9 @@ def get_gateway_routing_audit(
             status = "expected_direct"
         else:
             status = "no_llm_calls"
-        entries.append(GatewayRoutingEntry(tool_name=name, category=category, status=status, last_call=last_call_by_tool.get(name)))
+        entries.append(
+            GatewayRoutingEntry(tool_name=name, category=category, status=status, last_call=last_call_by_tool.get(name))
+        )
 
     # Surface what needs a look first: review > unconfirmed > ok > expected_direct > no_llm_calls.
     order = {"review": 0, "unconfirmed": 1, "ok": 2, "expected_direct": 3, "no_llm_calls": 4}

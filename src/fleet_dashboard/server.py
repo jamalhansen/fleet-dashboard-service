@@ -2,6 +2,7 @@
 frontend. No auth -- read-only status data, meant for LAN access only (bind
 to 0.0.0.0, same shape as japanese-tutor); nothing here holds a secret or
 lets a caller change anything."""
+
 from __future__ import annotations
 
 import os
@@ -17,7 +18,9 @@ app = FastAPI(title="Fleet Dashboard")
 
 VAULT_PATH = os.environ.get("FLEET_DASHBOARD_VAULT_PATH") or str(Path.home() / "vaults" / "Contexta")
 # Both artists of the 2026-10-01 experiment; colon-separated to override.
-ART_ITEMS_DIR = (os.environ.get("FLEET_DASHBOARD_ART_ITEMS_DIR") or "~/iCloud/ai-artist/items:~/iCloud/ai-artist-mentored/items").split(":")
+ART_ITEMS_DIR = (
+    os.environ.get("FLEET_DASHBOARD_ART_ITEMS_DIR") or "~/iCloud/ai-artist/items:~/iCloud/ai-artist-mentored/items"
+).split(":")
 JAPANESE_TUTOR_URL = os.environ.get("JAPANESE_TUTOR_URL") or "http://127.0.0.1:8421"
 
 # Jamal's two Obsidian vaults with the ops/ structure vault-health and

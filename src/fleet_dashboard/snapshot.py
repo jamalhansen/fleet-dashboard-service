@@ -86,7 +86,10 @@ def tutor_ui_url() -> str | None:
     explicit = os.environ.get("FLEET_DASHBOARD_TUTOR_URL")
     if explicit:
         return explicit
-    proc = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, check=False)
+    try:
+        proc = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, check=False)
+    except FileNotFoundError:  # scutil is macOS-only; CI runs on Linux
+        return None
     name = proc.stdout.strip()
     return f"http://{name}.local:8421" if proc.returncode == 0 and name else None
 

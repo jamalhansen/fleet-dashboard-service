@@ -150,3 +150,14 @@ def test_tutor_url_falls_back_to_null_without_a_hostname(monkeypatch):
     assert snapshot.tutor_ui_url() is None
     page = snapshot.render(INDEX_HTML, {}, datetime(2026, 10, 5, 7, 0, tzinfo=UTC))
     assert "window.JAPANESE_TUTOR_UI_URL = null;" in page
+
+
+def test_tutor_url_is_null_where_scutil_does_not_exist(monkeypatch):
+    """scutil is macOS-only: CI on Linux failed every render with FileNotFoundError (2026-10-05)."""
+    monkeypatch.delenv("FLEET_DASHBOARD_TUTOR_URL", raising=False)
+
+    def missing(*a, **k):
+        raise FileNotFoundError(2, "No such file or directory", "scutil")
+
+    monkeypatch.setattr(snapshot.subprocess, "run", missing)
+    assert snapshot.tutor_ui_url() is None

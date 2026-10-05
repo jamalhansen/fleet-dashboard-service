@@ -74,7 +74,25 @@ def art_data_url(image: Path, max_px: int = ART_MAX_PX) -> str:
     return f"data:{mime};base64,{base64.b64encode(payload).decode()}"
 
 
+def tutor_ui_url() -> str | None:
+    """Where the snapshot's "Open" link to japanese-tutor should point.
+
+    The live page derives it from its own hostname, but a snapshot is rendered from
+    a local file (no hostname: the link came out as "http://:8421") and is then
+    opened on a phone or served by the Pi, neither of which runs the tutor. Use
+    FLEET_DASHBOARD_TUTOR_URL if set, else this Mac's Bonjour name, which phones
+    and the Pi resolve on the home network and which survives a DHCP change.
+    """
+    explicit = os.environ.get("FLEET_DASHBOARD_TUTOR_URL")
+    if explicit:
+        return explicit
+    proc = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, check=False)
+    name = proc.stdout.strip()
+    return f"http://{name}.local:8421" if proc.returncode == 0 and name else None
+
+
 _SHIM = """<script>
+window.JAPANESE_TUTOR_UI_URL = %s;
 window.__SNAPSHOT__ = %s;
 window.fetch = async (url) => {
   const key = String(url);
@@ -98,7 +116,8 @@ def render(html: str, data: dict[str, object], generated: datetime) -> str:
     # "updated <now>" and Refresh describe the live page; in a snapshot the note above is the truth.
     html = html.replace("</head>", "<style>#updated-at, #refresh-btn { display: none; }</style>\n</head>", 1)
     first_script = html.index("<script>")
-    return html[:first_script] + _SHIM % payload + html[first_script:]
+    tutor = json.dumps(tutor_ui_url()).replace("</", "<\\/")  # JS string, or null to keep the page's default
+    return html[:first_script] + _SHIM % (tutor, payload) + html[first_script:]
 
 
 _SCRIPT = re.compile(r"<script\b[^>]*>.*?</script>", re.DOTALL | re.IGNORECASE)

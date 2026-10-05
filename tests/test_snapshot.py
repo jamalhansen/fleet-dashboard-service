@@ -133,3 +133,20 @@ def test_main_publishes_only_when_target_is_set(monkeypatch, tmp_path):
     monkeypatch.setenv("FLEET_DASHBOARD_PUBLISH_TO", "clifford:dashboard/index.html")
     snapshot.main()
     assert pushed == ["clifford:dashboard/index.html"]
+
+
+def test_render_sets_the_tutor_url_for_the_snapshot(monkeypatch):
+    """A snapshot rendered from a file baked the tutor link as "http://:8421" (2026-10-05)."""
+    monkeypatch.setenv("FLEET_DASHBOARD_TUTOR_URL", "http://mini.local:8421")
+    page = snapshot.render(INDEX_HTML, {}, datetime(2026, 10, 5, 7, 0, tzinfo=UTC))
+    assert 'window.JAPANESE_TUTOR_UI_URL = "http://mini.local:8421";' in page
+    assert page.index("window.JAPANESE_TUTOR_UI_URL") < page.index("const JAPANESE_TUTOR_UI_URL")
+
+
+def test_tutor_url_falls_back_to_null_without_a_hostname(monkeypatch):
+    monkeypatch.delenv("FLEET_DASHBOARD_TUTOR_URL", raising=False)
+    monkeypatch.setattr(snapshot.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"returncode": 1, "stdout": ""})())
+    assert snapshot.tutor_ui_url() is None
+    page = snapshot.render(INDEX_HTML, {}, datetime(2026, 10, 5, 7, 0, tzinfo=UTC))
+    assert "window.JAPANESE_TUTOR_UI_URL = null;" in page

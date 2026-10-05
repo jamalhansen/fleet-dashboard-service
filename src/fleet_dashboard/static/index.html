@@ -435,7 +435,10 @@
 // another device on the LAN (e.g. a phone hitting the Mac's LAN IP): the
 // browser would try to open 127.0.0.1 on the phone itself, which has
 // nothing listening on that port.
-const JAPANESE_TUTOR_UI_URL = `http://${window.location.hostname}:8421`;
+// A snapshot (opened from iCloud, or served by the Pi) has no useful hostname of
+// its own -- rendered from a local file it baked in "http://:8421" -- so the
+// snapshot sets window.JAPANESE_TUTOR_UI_URL to the Mac's address instead.
+const JAPANESE_TUTOR_UI_URL = window.JAPANESE_TUTOR_UI_URL || `http://${window.location.hostname}:8421`;
 
 function pillFor(rate, total) {
   if (total === 0) return '<span class="pill neutral"><span class="dot"></span>no calls</span>';

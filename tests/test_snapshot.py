@@ -85,7 +85,7 @@ def test_strip_scripts_removes_js_and_hides_the_picker():
 def test_prerender_fills_every_panel_without_javascript(monkeypatch):
     pytest.importorskip("playwright")
     monkeypatch.setattr(snapshot, "_routes", dict)
-    data = {path: {} for path in set(re.findall(r"fetch\([`'](/api/[a-z-]+)", INDEX_HTML))}
+    data: dict[str, object] = {path: {} for path in set(re.findall(r"fetch\([`'](/api/[a-z-]+)", INDEX_HTML))}
     page = snapshot.render(INDEX_HTML, data, datetime(2026, 9, 25, 7, 0, tzinfo=UTC))
     try:
         out = snapshot.prerender(page, timeout_ms=10_000)

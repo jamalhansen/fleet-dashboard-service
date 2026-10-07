@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import plistlib
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -550,13 +550,17 @@ class ArtItem:
     artist: str | None = None
 
 
-def get_latest_art(items_dir: str | Path | list[str | Path] = "~/iCloud/ai-artist/items") -> ArtItem | None:
+def _str_or_none(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def get_latest_art(items_dir: str | Path | Sequence[str | Path] = "~/iCloud/ai-artist/items") -> ArtItem | None:
     """The newest piece across one or more artists' items folders.
 
     Never raises: a missing directory or malformed item note returns None.
     """
     try:
-        dirs = [Path(d).expanduser() for d in (items_dir if isinstance(items_dir, list) else [items_dir])]
+        dirs = [Path(d).expanduser() for d in ([items_dir] if isinstance(items_dir, (str, Path)) else items_dir)]
         item_files = [f for d in dirs if d.exists() for f in d.glob("*.md")]
         if not item_files:
             return None
@@ -571,15 +575,17 @@ def get_latest_art(items_dir: str | Path | list[str | Path] = "~/iCloud/ai-artis
                 return None
             image_path = candidates[0]
 
-        human = post.metadata.get("human_score")
+        meta = post.metadata
+        human = meta.get("human_score")
+        self_score = meta.get("self_score")
         return ArtItem(
-            title=post.metadata.get("title") or latest.stem,
-            self_score=post.metadata.get("self_score"),
-            interest=post.metadata.get("interest"),
-            generated_at=post.metadata.get("generated_at"),
+            title=str(meta.get("title") or latest.stem),
+            self_score=float(str(self_score)) if self_score is not None else None,
+            interest=_str_or_none(meta.get("interest")),
+            generated_at=_str_or_none(meta.get("generated_at")),
             image_path=image_path,
-            human_score=float(human) if human not in (None, "", "null") else None,
-            artist=post.metadata.get("artist") or latest.parent.parent.name,
+            human_score=float(str(human)) if human not in (None, "", "null") else None,
+            artist=str(meta.get("artist") or latest.parent.parent.name),
         )
     except Exception:  # noqa: BLE001 - best-effort; a malformed item note shouldn't break the page
         return None
@@ -839,7 +845,7 @@ def get_writing_cadence(
                 }
             )
 
-        pipeline = dict.fromkeys(_PIPELINE_STATUSES, 0)
+        pipeline: dict[str, int] = dict.fromkeys(_PIPELINE_STATUSES, 0)
         freshest: tuple[float, Path, str] | None = None
         vault = Path(vault_blog_dir).expanduser()
         if vault.exists():

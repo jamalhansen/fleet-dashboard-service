@@ -11,3 +11,4 @@ jobs:
     uses: jamalhansen/local-first-common/.github/workflows/python-ci.yml@main
     with:
       siblings: "tension-triage-dashboard"
+      typecheck: strict   # pyright at zero errors; keep it there

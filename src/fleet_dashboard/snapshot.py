@@ -41,7 +41,7 @@ def _routes() -> dict[str, Callable]:
     return {
         r.path: r.endpoint
         for r in server.app.routes
-        if isinstance(r, APIRoute) and "GET" in r.methods and r.path != ART_IMAGE_PATH
+        if isinstance(r, APIRoute) and r.methods and "GET" in r.methods and r.path != ART_IMAGE_PATH
     }
 
 

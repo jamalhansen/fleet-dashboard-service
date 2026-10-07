@@ -655,7 +655,7 @@ class TestGetVaultHealth:
 
         result = core.get_vault_health(tmp_path)
         assert result.inbox_count == 2
-        assert result.inbox_oldest_days >= 1.9
+        assert result.inbox_oldest_days is not None and result.inbox_oldest_days >= 1.9
 
     def test_last_health_check_is_most_recent_report(self, tmp_path):
         health_dir = tmp_path / "ops" / "health"
@@ -712,7 +712,7 @@ class TestGetWritingCadence:
         assert w.weeks[-2] == {"week_of": "2026-09-14", "posts": 1}
         assert w.weeks_on_target == 1  # the window starts 2026-08-03; 2026-07-20 is before it
         assert w.pipeline == {"draft": 1, "outline": 1, "idea": 0, "brainstorm": 0}
-        assert w.freshest_draft["name"] == "b"
+        assert w.freshest_draft is not None and w.freshest_draft["name"] == "b"
 
     def test_no_published_posts(self, tmp_path):
         blog = tmp_path / "blog"
@@ -1251,8 +1251,10 @@ def test_latest_art_spans_artists_and_reports_rating(tmp_path):
         (tmp_path / artist / "images" / f"{stem}.png").write_bytes(b"png")
     dirs = [tmp_path / "ai-artist" / "items", tmp_path / "ai-artist-mentored" / "items"]
     item = core.get_latest_art(dirs)
+    assert item is not None
     assert (item.title, item.artist, item.human_score) == ("2026-10-02-b", "ai-artist-mentored", None)
-    assert core.get_latest_art(dirs[:1]).human_score == 0.5
+    first = core.get_latest_art(dirs[:1])
+    assert first is not None and first.human_score == 0.5
 
 
 def test_repo_health_security_marks_repo_unhealthy_and_exposes_counts(tmp_path):

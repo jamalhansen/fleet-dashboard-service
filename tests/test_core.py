@@ -89,8 +89,32 @@ class TestGetFleetActivity:
         db = tmp_path / "test.duckdb"
         monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
         _seed_db(db, processing_rows=[("my-tool", True)])
-        with patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")):
+        with (
+            patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")),
+            patch("fleet_dashboard.core.time.sleep"),
+        ):
             assert core.get_fleet_activity() == []
+
+    def test_a_brief_write_lock_is_waited_out(self, tmp_path, monkeypatch):
+        """process-doctor and writing-status write for well under a second at :00/:30, the
+        snapshot's minute since 2026-10-07; the cards showed "No fetches" instead of waiting."""
+        import duckdb
+
+        db = tmp_path / "test.duckdb"
+        monkeypatch.setenv("LOCAL_FIRST_TRACKING_DB", str(db))
+        _seed_db(db, processing_rows=[("my-tool", True)])
+        real_connect = duckdb.connect
+        calls = {"n": 0}
+
+        def flaky(*a, **k):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise RuntimeError("IO Error: Could not set lock on file: Conflicting lock is held")
+            return real_connect(*a, **k)
+
+        with patch("duckdb.connect", side_effect=flaky), patch("fleet_dashboard.core.time.sleep") as slept:
+            assert [a.tool_name for a in core.get_fleet_activity()] == ["my-tool"]
+        assert calls["n"] == 3 and slept.call_count == 2
 
     def test_gateway_echo_row_excluded_from_total(self, tmp_path, monkeypatch):
         """Regression 2026-09-20: llm-gateway-service's own row for a
@@ -255,7 +279,10 @@ class TestGetModelUsage:
             "via_gateway BOOLEAN, success BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         conn.close()
-        with patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")):
+        with (
+            patch("duckdb.connect", side_effect=RuntimeError("could not set lock on file")),
+            patch("fleet_dashboard.core.time.sleep"),
+        ):
             assert core.get_model_usage() == []
 
     def test_gateway_routed_call_is_not_double_counted(self, tmp_path, monkeypatch):

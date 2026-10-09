@@ -279,6 +279,11 @@
   .todo-published_incomplete { border-color: var(--bad); }
   .todo-needs_status, .todo-needs_category { border-color: var(--warn); }
   .skeleton { color: var(--text-dim); font-size: 12.5px; }
+.card details > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; }
+.card details > summary::-webkit-details-marker { display: none; }
+.card details > summary .hint { color: var(--muted, #888); font-size: 0.85em; }
+.card details[open] > summary .hint { visibility: hidden; }
+.card details > .detail-body { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -324,7 +329,10 @@
 
     <section class="card span-5">
       <h2>Services <span class="source">this machine</span></h2>
-      <div class="service-list" id="services-list"><div class="skeleton">Loading&hellip;</div></div>
+      <details>
+        <summary><span id="services-summary" class="skeleton">Loading&hellip;</span><span class="hint">details</span></summary>
+        <div class="service-list detail-body" id="services-list"><div class="skeleton">Loading&hellip;</div></div>
+      </details>
     </section>
 
     <section class="card span-5">
@@ -334,7 +342,9 @@
 
     <section class="card span-7">
       <h2>Usage by Tool &amp; Model <span class="source">fleet-wide</span></h2>
-      <div class="table-scroll">
+      <details>
+        <summary><span id="models-summary" class="skeleton">Loading&hellip;</span><span class="hint">details</span></summary>
+      <div class="table-scroll detail-body">
         <table>
           <thead>
             <tr>
@@ -350,6 +360,7 @@
           <tbody id="models-body"><tr><td colspan="7" class="skeleton">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
+      </details>
     </section>
 
     <section class="card span-7">
@@ -550,6 +561,14 @@ async function loadFleet() {
     const data = await res.json();
 
     const svcList = document.getElementById('services-list');
+    const svcSummary = document.getElementById('services-summary');
+    svcSummary.className = '';
+    const services = data.services || [];
+    const running = services.filter(s => s.running), stopped = services.filter(s => !s.running);
+    svcSummary.innerHTML = services.length
+      ? `<span class="pill good"><span class="dot"></span>${running.length} running</span>`
+        + (stopped.length ? ` <span class="pill neutral"><span class="dot"></span>${stopped.length} stopped: ${stopped.map(s => s.label.replace(/^com\.(localfirst|jamalhansen)\./, '')).join(', ')}</span>` : '')
+      : 'no services';
     if (!data.services.length) {
       svcList.innerHTML = '<div class="empty-state">No com.localfirst.* LaunchAgents found.</div>';
     } else {
@@ -564,6 +583,7 @@ async function loadFleet() {
     }
   } catch (e) {
     document.getElementById('services-list').innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+    const ss = document.getElementById('services-summary'); ss.className = ''; ss.textContent = 'unavailable';
   }
 }
 
@@ -587,6 +607,13 @@ async function loadModels() {
         </div>`).join('');
     }
 
+    const modelsSummary = document.getElementById('models-summary');
+    modelsSummary.className = '';
+    const usage = data.usage || [];
+    const calls = usage.reduce((n, u) => n + u.total, 0), fails = usage.reduce((n, u) => n + u.failures, 0);
+    modelsSummary.innerHTML = usage.length
+      ? `<span style="font-family:var(--mono);">${calls} calls &middot; ${new Set(usage.map(u => u.tool_name)).size} tools &middot; ${new Set(usage.map(u => u.model)).size} models</span> ${pillFor(calls ? fails / calls : 0, calls)}`
+      : 'no model calls in this window';
     if (!data.usage.length) {
       body.innerHTML = '<tr><td colspan="7" class="empty-state">No model calls logged in this window.</td></tr>';
       return;
@@ -604,6 +631,7 @@ async function loadModels() {
   } catch (e) {
     body.innerHTML = '<tr><td colspan="6" class="empty-state">Could not reach the dashboard API.</td></tr>';
     providersList.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
+    const ms = document.getElementById('models-summary'); ms.className = ''; ms.textContent = 'unavailable';
   }
 }
 

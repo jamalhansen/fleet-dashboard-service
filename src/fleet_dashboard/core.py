@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import plistlib
 import subprocess
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -68,6 +69,27 @@ class ToolActivity:
         return self.failures / self.total if self.total else 0.0
 
 
+def _connect_read_only(db_path: Path, attempts: int = 6, wait: float = 0.5):
+    """Open the tracking DB read-only, waiting out another process's write lock.
+
+    DuckDB allows one writer; a read-only connect while process-doctor or
+    writing-status is mid-write fails with "Could not set lock on file". Until
+    2026-10-08 every card swallowed that and rendered "No fetches in this window":
+    the snapshot had moved to :00/:30, the same minute as both writers. Their
+    writes take well under a second, so a few short retries cover it.
+    """
+    import duckdb
+
+    for attempt in range(attempts):
+        try:
+            return duckdb.connect(str(db_path), read_only=True)
+        except Exception as exc:  # duckdb's lock error is a plain IOException; match on its text
+            if "lock" not in str(exc).lower() or attempt == attempts - 1:
+                raise
+            time.sleep(wait)
+    raise RuntimeError("unreachable")
+
+
 def get_fleet_activity(lookback_hours: float = 24 * 7) -> list[ToolActivity]:
     """Per-tool call activity over the lookback window, merged across all
     three log tables. Never raises: a lock conflict or missing DB yields []."""
@@ -78,9 +100,7 @@ def get_fleet_activity(lookback_hours: float = 24 * 7) -> list[ToolActivity]:
     cutoff = datetime.now() - timedelta(hours=lookback_hours)  # noqa: DTZ005 - must stay naive to match these tables' naive CURRENT_TIMESTAMP columns
     merged: dict[str, ToolActivity] = {}
     try:
-        import duckdb
-
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn = _connect_read_only(db_path)
         try:
             for table, query in _STATS_QUERIES.items():
                 for tool_name, total, failures, last_call in conn.execute(query, [cutoff]).fetchall():
@@ -201,9 +221,7 @@ def get_model_usage(lookback_hours: float = 24 * 7) -> list[ModelUsage]:
 
     cutoff = datetime.now() - timedelta(hours=lookback_hours)  # noqa: DTZ005 - must stay naive to match processing_log's naive CURRENT_TIMESTAMP column
     try:
-        import duckdb
-
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn = _connect_read_only(db_path)
         try:
             rows = conn.execute(_MODEL_USAGE_QUERY, [cutoff]).fetchall()
         finally:
@@ -306,9 +324,7 @@ def get_fetch_usage(lookback_hours: float = 24 * 7) -> list[FetchUsage]:
         return []
     cutoff = datetime.now() - timedelta(hours=lookback_hours)  # noqa: DTZ005 - must stay naive to match fetch_log's naive attempted_at column
     try:
-        import duckdb
-
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn = _connect_read_only(db_path)
         try:
             rows = conn.execute(_FETCH_USAGE_QUERY, [cutoff]).fetchall()
         finally:
@@ -365,9 +381,7 @@ def get_api_call_usage(lookback_hours: float = 24 * 7) -> list[ApiCallUsage]:
         return []
     cutoff = datetime.now() - timedelta(hours=lookback_hours)  # noqa: DTZ005 - must stay naive to match api_call_log's naive attempted_at column
     try:
-        import duckdb
-
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn = _connect_read_only(db_path)
         try:
             rows = conn.execute(_API_CALL_USAGE_QUERY, [cutoff]).fetchall()
         finally:

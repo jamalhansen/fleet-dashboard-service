@@ -792,6 +792,13 @@ async function loadWritingPractice() {
       return items.length ? `<div style="flex:1;min-width:260px;"><div class="l" style="font-weight:600;margin-bottom:4px;">${label}</div>
         <ul style="margin:0;padding-left:18px;">${items.map(starter).join('')}</ul></div>` : '';
     };
+    // Posts in progress: what he drafted but hasn't finished or published (calib write drafts).
+    const drafts = w.drafts || [];
+    const draft = d => `<li style="margin:4px 0;">
+        <a href="${esc(d.link)}" style="color:var(--accent);">${esc(d.title)}</a>
+        <span class="l" style="font-size:12px;"> &middot; ${esc(d.status)} &middot; edited ${d.days_since_edit === 0 ? 'today' : `${d.days_since_edit}d ago`}${d.thin_sections ? ` &middot; ${d.thin_sections} thin section${d.thin_sections === 1 ? '' : 's'}` : ''}${d.markers ? ` &middot; ${d.markers} open marker${d.markers === 1 ? '' : 's'}` : ''}</span></li>`;
+    const draftsBlock = drafts.length ? `<div style="margin-top:8px;"><div class="l" style="font-weight:600;margin-bottom:4px;">Drafts in progress</div>
+        <ul style="margin:0;padding-left:18px;">${drafts.map(draft).join('')}</ul></div>` : '';
     const r = w.reminders;
     const reminders = [
       r.art_unrated ? `<span>${r.art_unrated} art piece${r.art_unrated === 1 ? '' : 's'} to rate: <code>/rate-art</code></span>` : '',
@@ -806,13 +813,14 @@ async function loadWritingPractice() {
       </div>
       <div style="margin:10px 0;">${dots}</div>
       ${t.done ? '' : `<p style="margin:8px 0;"><strong>Today's 10 minutes:</strong> ${esc(t.prompt)}</p>`}
+      ${draftsBlock}
       <details style="margin:8px 0;"><summary>How this works</summary>
         <ol style="margin:6px 0;padding-left:20px;">
           <li>Tap a starter below; it opens in Obsidian.</li>
           <li>Pick one heading. Write under it for 10 minutes, then delete that italic prompt.</li>
           <li>${t.pages_min ?? 50} words of morning pages (in the daily note) or 100 words in the vault counts as a day. Wrote somewhere else? <code>calib write done</code>.</li>
           <li>Sundays, <code>calib write ideas</code> turns the week's morning pages into starters under &ldquo;From your pages&rdquo;, each quoting the line it grew from.</li>
-          <li>When a starter reads like a post: set <code>status: draft</code> and move its folder to <code>blog/posts/YYYY/MM/</code>.</li>
+          <li>When a starter reads like a post: set <code>status: draft</code> and move its folder to <code>blog/posts/YYYY/MM/</code>. It then shows under Drafts in progress until it's published.</li>
         </ol>
       </details>
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;">

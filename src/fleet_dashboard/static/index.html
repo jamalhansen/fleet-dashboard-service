@@ -147,6 +147,8 @@
   .span-7  { grid-column: span 7; }
   .span-5  { grid-column: span 5; }
   .span-6  { grid-column: span 6; }
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+  .stack > .card { flex: 1; }
   @media (max-width: 760px) {
     .span-7, .span-5, .span-6 { grid-column: span 12; }
   }
@@ -155,7 +157,7 @@
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
   tbody tr:last-child td { border-bottom: none; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); white-space: nowrap; }
   .table-scroll { overflow-x: auto; }
 
   .pill {
@@ -305,26 +307,13 @@
     <section class="card span-12">
       <h2>Writing practice <span class="source">10 minutes a day &middot; calib</span></h2>
       <div id="writing-practice-body"><div class="skeleton">Loading&hellip;</div></div>
+      <h3 class="subhead">On jamalhansen.com <span class="source" style="text-transform:none;letter-spacing:0;font-weight:400;">target: one post a week</span></h3>
+      <div id="writing-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-7">
       <h2>Fetches <span class="source">fetch_log, per domain</span> <span id="activity-window" style="text-transform:none;letter-spacing:0;"></span></h2>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Tool</th>
-              <th>Domain</th>
-              <th class="num">Calls</th>
-              <th class="num">Failures</th>
-              <th class="num">Failure&nbsp;rate</th>
-              <th class="num">Avg&nbsp;duration</th>
-              <th>Last fetch</th>
-            </tr>
-          </thead>
-          <tbody id="fetches-body"><tr><td colspan="7" class="skeleton">Loading&hellip;</td></tr></tbody>
-        </table>
-      </div>
+      <div id="fetches-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-5">
@@ -384,23 +373,10 @@
     </section>
 
     <section class="card span-5">
-      <h2>Vault Health <span class="source">Contexta</span></h2>
+      <h2>Vault: Contexta <span class="source">thinking vault</span></h2>
       <div id="vault-health-body-contexta"><div class="skeleton">Loading&hellip;</div></div>
-    </section>
-
-    <section class="card span-5">
-      <h2>Vault Tensions <span class="source">Contexta</span></h2>
+      <h3 class="subhead">Tensions</h3>
       <div id="tensions-body-contexta"><div class="skeleton">Loading&hellip;</div></div>
-    </section>
-
-    <section class="card span-5">
-      <h2>Vault Health <span class="source">KeySix</span></h2>
-      <div id="vault-health-body-keysix"><div class="skeleton">Loading&hellip;</div></div>
-    </section>
-
-    <section class="card span-5">
-      <h2>Vault Tensions <span class="source">KeySix</span></h2>
-      <div id="tensions-body-keysix"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-7">
@@ -408,10 +384,19 @@
       <div id="art-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
-    <section class="card span-5">
-      <h2>Japanese Tutor <span class="source">own DB</span></h2>
-      <div id="jt-body"><div class="skeleton">Loading&hellip;</div></div>
-    </section>
+    <div class="span-5 stack">
+      <section class="card">
+        <h2>Vault: KeySix <span class="source">work vault</span></h2>
+        <div id="vault-health-body-keysix"><div class="skeleton">Loading&hellip;</div></div>
+        <h3 class="subhead">Tensions</h3>
+        <div id="tensions-body-keysix"><div class="skeleton">Loading&hellip;</div></div>
+      </section>
+
+      <section class="card">
+        <h2>Japanese Tutor <span class="source">own DB</span></h2>
+        <div id="jt-body"><div class="skeleton">Loading&hellip;</div></div>
+      </section>
+    </div>
 
     <section class="card span-12">
       <h2>Repo Health <span class="source">local-first fleet</span></h2>
@@ -426,11 +411,6 @@
     <section class="card span-12">
       <h2>Frontmatter Validation <span class="source">BrainSync</span></h2>
       <div id="frontmatter-body"><div class="skeleton">Loading&hellip;</div></div>
-    </section>
-
-    <section class="card span-12">
-      <h2>Writing <span class="source">jamalhansen.com &middot; target: one post a week</span></h2>
-      <div id="writing-body"><div class="skeleton">Loading&hellip;</div></div>
     </section>
 
     <section class="card span-12">
@@ -478,11 +458,44 @@ function toolLabel(name) {
     : name;
 }
 
+function parseIso(iso) {
+  if (!iso) return null;
+  const t = String(iso).replace(' ', 'T');
+  const d = new Date(/(Z|[+-]\d\d:?\d\d)$/.test(t) ? t : t + 'Z');
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
-  const d = new Date(iso.replace(' ', 'T') + (iso.includes('Z') ? '' : 'Z'));
-  if (isNaN(d.getTime())) return iso;
+  const d = parseIso(iso);
+  if (!d) return iso;
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// "3 h ago" for a timestamp; the exact time is in the tooltip.
+function ago(iso) {
+  const d = parseIso(iso);
+  if (!d) return 'unknown';
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 2) return 'just now';
+  if (mins < 90) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 36) return hrs + ' h ago';
+  return Math.round(hrs / 24) + ' days ago';
+}
+
+// Snapshot age as a pill: amber once older than the job's cadence, so a stale card can't pass for current.
+function freshness(iso, staleAfterDays) {
+  const d = parseIso(iso);
+  if (!d) return '';
+  const old = (Date.now() - d.getTime()) / 86400000 > staleAfterDays;
+  return `<span class="pill ${old ? 'warn' : 'neutral'}" title="${fmtTime(iso)}">checked ${ago(iso)}</span>`;
+}
+
+// Vault tension titles are sometimes a file slug; make those read as a sentence.
+function prettyTitle(t) {
+  if (/\s/.test(t)) return t;
+  return t.replace(/-/g, ' ').replace(/\b(ai|llm|llms|api|rag)\b/g, w => w.toUpperCase()).replace(/^./, c => c.toUpperCase());
 }
 
 function lookbackHours() {
@@ -502,32 +515,38 @@ async function loadFetches() {
     const data = await res.json();
     win.textContent = `(${lookbackLabel()})`;
     if (!data.usage.length) {
-      body.innerHTML = '<tr><td colspan="7" class="empty-state">No fetches in this window.</td></tr>';
+      body.innerHTML = '<div class="empty-state">No fetches in this window.</div>';
       return;
     }
-    // Sorted by total descending already -- a long tail of one-off domains
-    // (Jamal 2026-09-22: "excessive") isn't worth a row each; show the
-    // heavy hitters and roll the rest into one summary line.
-    const TOP_N = 10;
-    const shown = data.usage.slice(0, TOP_N);
-    const rest = data.usage.slice(TOP_N);
-    let rowsHtml = shown.map(u => `
+    const calls = data.usage.reduce((n, u) => n + u.total, 0);
+    const fails = data.usage.reduce((n, u) => n + u.failures, 0);
+    const tools = new Set(data.usage.map(u => u.tool_name));
+    const multiTool = tools.size > 1;
+    const row = u => `
       <tr>
-        <td>${u.tool_name}</td>
+        ${multiTool ? `<td>${u.tool_name}</td>` : ''}
         <td>${u.domain}</td>
         <td class="num">${u.total}</td>
         <td class="num">${u.failures}</td>
         <td class="num">${pillFor(u.failure_rate, u.total)}</td>
         <td class="num">${u.avg_duration_ms != null ? u.avg_duration_ms + 'ms' : '—'}</td>
-        <td>${fmtTime(u.last_call)}</td>
-      </tr>`).join('');
-    if (rest.length) {
-      const restCalls = rest.reduce((sum, u) => sum + u.total, 0);
-      rowsHtml += `<tr><td colspan="7" class="empty-state">+${rest.length} more domain${rest.length === 1 ? '' : 's'} (${restCalls} more calls)</td></tr>`;
-    }
-    body.innerHTML = rowsHtml;
+        <td class="num">${ago(u.last_call)}</td>
+      </tr>`;
+    const table = rows => `<div class="table-scroll"><table><thead><tr>${multiTool ? '<th>Tool</th>' : ''}<th>Domain</th><th class="num">Calls</th><th class="num">Failures</th><th class="num">Rate</th><th class="num">Avg</th><th class="num">Last</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
+    const failing = data.usage.filter(u => u.failures > 0);
+    // Only domains that failed are worth a row up front; the rest are one toggle away.
+    body.innerHTML = `
+      <div class="art-sub" style="margin-bottom:8px;">
+        <span>${calls} calls across ${data.usage.length} domain${data.usage.length === 1 ? '' : 's'}${multiTool ? '' : ' &middot; ' + [...tools][0]}</span>
+        ${fails ? `<span class="pill ${failing.some(u => u.failure_rate >= 0.1) ? 'bad' : 'warn'}"><span class="dot"></span>${fails} failed on ${failing.length} domain${failing.length === 1 ? '' : 's'}</span>` : '<span class="pill good"><span class="dot"></span>no failures</span>'}
+      </div>
+      ${failing.length ? table(failing) : ''}
+      <details style="margin-top:8px;">
+        <summary><span>all ${data.usage.length} domains</span><span class="hint">details</span></summary>
+        <div class="detail-body">${table(data.usage.slice(0, 15))}${data.usage.length > 15 ? `<div class="empty-state">+${data.usage.length - 15} more</div>` : ''}</div>
+      </details>`;
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="7" class="empty-state">Could not reach the dashboard API.</td></tr>';
+    body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }
 }
 
@@ -564,10 +583,17 @@ async function loadFleet() {
     const svcSummary = document.getElementById('services-summary');
     svcSummary.className = '';
     const services = data.services || [];
-    const running = services.filter(s => s.running), stopped = services.filter(s => !s.running);
+    const short = s => s.label.replace(/^com\.(localfirst|jamalhansen)\./, '');
+    const running = services.filter(s => s.running);
+    const idle = services.filter(s => !s.running);
+    // A scheduled job between runs is idle by design; it is a problem only if its last run failed
+    // or a KeepAlive service is not running.
+    const broken = idle.filter(s => s.keep_alive || (s.last_exit_code != null && s.last_exit_code !== 0));
+    const resting = idle.length - broken.length;
     svcSummary.innerHTML = services.length
       ? `<span class="pill good"><span class="dot"></span>${running.length} running</span>`
-        + (stopped.length ? ` <span class="pill neutral"><span class="dot"></span>${stopped.length} stopped: ${stopped.map(s => s.label.replace(/^com\.(localfirst|jamalhansen)\./, '')).join(', ')}</span>` : '')
+        + (resting ? ` <span class="pill neutral"><span class="dot"></span>${resting} scheduled</span>` : '')
+        + (broken.length ? ` <span class="pill bad"><span class="dot"></span>${broken.length} failed: ${broken.map(short).join(', ')}</span>` : ' <span class="pill good"><span class="dot"></span>none failed</span>')
       : 'no services';
     if (!data.services.length) {
       svcList.innerHTML = '<div class="empty-state">No com.localfirst.* LaunchAgents found.</div>';
@@ -576,7 +602,7 @@ async function loadFleet() {
         <div class="service-row">
           <span class="label">${s.label.replace(/^com\.(localfirst|jamalhansen)\./, '')}</span>
           <span class="flags">
-            ${s.running ? `<span class="pill good"><span class="dot"></span>pid ${s.pid}</span>` : '<span class="pill neutral"><span class="dot"></span>stopped</span>'}
+            ${s.running ? `<span class="pill good"><span class="dot"></span>pid ${s.pid}</span>` : (s.keep_alive || (s.last_exit_code != null && s.last_exit_code !== 0)) ? `<span class="pill bad"><span class="dot"></span>${s.keep_alive ? 'down' : 'exit ' + s.last_exit_code}</span>` : '<span class="pill neutral"><span class="dot"></span>scheduled</span>'}
             ${s.keep_alive ? ' keepalive' : ''}
           </span>
         </div>`).join('');
@@ -646,7 +672,7 @@ async function loadTensions(vaultKey, vaultName) {
     const res = await fetch(`/api/tensions?vault=${encodeURIComponent(vaultName)}`);
     const t = await res.json();
     const list = t.recent_titles.length
-      ? '<ul class="tension-list">' + t.recent_titles.map(x => `<li>${x}</li>`).join('') + '</ul>'
+      ? '<ul class="tension-list">' + t.recent_titles.map(x => `<li>${prettyTitle(x)}</li>`).join('') + '</ul>'
       : '<div class="empty-state">No tensions on file.</div>';
     body.innerHTML = `
       <div class="tension-count-row">
@@ -714,7 +740,7 @@ async function loadRepoHealth() {
         <div class="tension-count"><span class="n">${h.total - h.healthy}</span><span class="l">Need attention</span></div>
         <div class="tension-count"><span class="n">${h.total}</span><span class="l">Total repos</span></div>
       </div>
-      <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(h.generated_at)}</span></div>
+      <div class="art-sub" style="margin-bottom:10px;">${freshness(h.generated_at, 1)}</div>
       ${unhealthy.length
         ? `<div class="table-scroll"><table><thead><tr><th>Repo</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`
         : '<div class="empty-state">All repos healthy.</div>'}`;
@@ -740,15 +766,20 @@ async function loadGatewayRouting() {
       body.innerHTML = '<div class="empty-state">Not run yet.</div>';
       return;
     }
-    const needsAttention = g.entries.filter(e => e.status === 'review' || e.status === 'unconfirmed');
-    const rows = needsAttention.length ? needsAttention : g.entries;
-    const rowsHtml = rows.map(e => `<tr><td>${e.tool_name}</td><td>${GATEWAY_STATUS_PILL[e.status] || e.status}</td><td>${fmtTime(e.last_call)}</td></tr>`).join('');
-    body.innerHTML = `
-      <div class="art-sub" style="margin-bottom:10px;">
-        <span>generated ${fmtTime(g.generated_at)}</span>
-        &middot; ${needsAttention.length} of ${g.entries.length} repos need a look
-      </div>
-      <div class="table-scroll"><table><thead><tr><th>Repo</th><th>Routing</th><th>Last activity</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+    const review = g.entries.filter(e => e.status === 'review');
+    const unconfirmed = g.entries.filter(e => e.status === 'unconfirmed');
+    const needs = [...review, ...unconfirmed];
+    const rowsHtml = needs.map(e => `<tr><td>${e.tool_name}</td><td>${GATEWAY_STATUS_PILL[e.status] || e.status}</td><td>${e.last_call ? ago(e.last_call) : '—'}</td></tr>`).join('');
+    body.innerHTML = needs.length ? `
+      <div class="art-sub" style="margin-bottom:6px;">${freshness(g.generated_at, 1)}</div>
+      <details ${review.length ? 'open' : ''}>
+        <summary><span>
+          ${review.length ? `<span class="pill bad"><span class="dot"></span>${review.length} direct call${review.length === 1 ? '' : 's'} to review</span>` : ''}
+          <span class="pill warn"><span class="dot"></span>${unconfirmed.length} unconfirmed</span>
+          <span class="l">of ${g.entries.length} repos</span></span><span class="hint">details</span></summary>
+        <div class="table-scroll detail-body"><table><thead><tr><th>Repo</th><th>Routing</th><th class="num">Last activity</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+      </details>`
+      : `<div class="art-sub" style="margin-bottom:6px;">${freshness(g.generated_at, 1)}</div><div class="empty-state">All ${g.entries.length} repos route as expected.</div>`;
   } catch (e) {
     body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }
@@ -864,7 +895,6 @@ async function loadWriting() {
       <div style="display:flex;gap:6px;margin:10px 0;">${weeks}</div>
       <div class="art-sub">
         <span>last: ${esc(w.last_published_title)} (${w.last_published ?? '—'})</span>
-        ${w.freshest_draft ? `<span>freshest draft: ${esc(w.freshest_draft.name)} (touched ${w.freshest_draft.modified})</span>` : '<span>no drafts in progress</span>'}
       </div>`;
   } catch (e) {
     body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
@@ -888,12 +918,8 @@ async function loadBlogValidation() {
       <tr>
         <td>${esc(t.name)}</td>
         <td>${pill(t)}</td>
-        <td class="num">${t.posts}</td>
-        <td class="num">${t.posts_skipped_by_status}</td>
-        <td class="num">${t.posts_passed}</td>
-        <td class="num">${t.posts_failed}</td>
-        <td class="num">${t.blocks_failed}</td>
-        <td class="num">${t.fully_covered} / ${t.needs_attention}</td>
+        <td class="num">${t.posts}${t.posts_skipped_by_status ? ` <span class="l" title="drafts and outlines are not run">+${t.posts_skipped_by_status} skipped</span>` : ''}</td>
+        <td class="num">${t.fully_covered} done, ${t.needs_attention} to go</td>
         <td class="num">${t.assertion_pct}%</td>
       </tr>`).join('');
     const failing = v.targets.filter(t => t.failed_posts.length).map(t => `
@@ -905,14 +931,12 @@ async function loadBlogValidation() {
         </ul>
       </details>`).join('');
     body.innerHTML = `
-      <div class="tension-count-row">
-        <div class="tension-count"><span class="n">${v.posts}</span><span class="l">Posts checked</span></div>
-        <div class="tension-count"><span class="n">${v.posts_failed}</span><span class="l">Posts failing</span></div>
-        <div class="tension-count"><span class="n">${v.blocks_failed}</span><span class="l">Blocks failing</span></div>
+      <div class="art-sub" style="margin-bottom:10px;">
+        ${v.posts_failed ? `<span class="pill bad"><span class="dot"></span>${v.posts_failed} post${v.posts_failed === 1 ? '' : 's'} failing (${v.blocks_failed} block${v.blocks_failed === 1 ? '' : 's'})</span>` : `<span class="pill good"><span class="dot"></span>all ${v.posts} posts pass</span>`}
+        ${freshness(v.generated_at, 8)}
       </div>
-      <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(v.generated_at)}</span></div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Target</th><th>Status</th><th class="num">Posts</th><th class="num">Not run (status)</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Failed blocks</th><th class="num">Annotated / needs annotation</th><th class="num">Blocks asserting</th></tr></thead>
+        <thead><tr><th>Target</th><th>Status</th><th class="num">Posts</th><th class="num" title="code blocks that have an annotation, of those that need one">Annotated</th><th class="num" title="share of blocks that assert something">Asserting</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
       ${failing ? `<h3 class="subhead">Failing posts</h3><div class="todo-list">${failing}</div>` : ''}`;
@@ -955,12 +979,10 @@ async function loadFrontmatterValidation() {
       <div class="tension-count-row">
         <div class="tension-count"><span class="n">${v.total}</span><span class="l">Files checked</span></div>
         <div class="tension-count"><span class="n">${v.invalid_count}</span><span class="l">Invalid</span></div>
-        <div class="tension-count"><span class="n">${v.error_summary.length}</span><span class="l">Distinct issues</span></div>
       </div>
-      <div class="art-sub" style="margin-bottom:10px;"><span>generated ${fmtTime(v.generated_at)}</span></div>
-      ${todoList ? `<h3 class="subhead">Content to-do</h3>${todoList}` : ''}
-      <h3 class="subhead">All issues</h3>
-      ${issuesList}`;
+      <div class="art-sub" style="margin-bottom:10px;">${freshness(v.generated_at, 8)}</div>
+      ${todoList}
+      <details style="margin-top:10px;"><summary><span>all ${v.error_summary.length} issue types</span><span class="hint">details</span></summary><div class="detail-body">${issuesList}</div></details>`;
   } catch (e) {
     body.innerHTML = '<div class="empty-state">Could not reach the dashboard API.</div>';
   }

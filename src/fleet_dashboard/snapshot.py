@@ -83,12 +83,23 @@ def tutor_ui_url() -> str | None:
     The live page derives it from its own hostname, but a snapshot is rendered from
     a local file (no hostname: the link came out as "http://:8421") and is then
     opened on a phone or served by the Pi, neither of which runs the tutor. Use
-    FLEET_DASHBOARD_TUTOR_URL if set, else this Mac's Bonjour name, which phones
-    and the Pi resolve on the home network and which survives a DHCP change.
+    FLEET_DASHBOARD_TUTOR_URL if set, else this Mac's LAN address, else its Bonjour
+    name.
     """
     explicit = os.environ.get("FLEET_DASHBOARD_TUTOR_URL")
     if explicit:
         return explicit
+    # 2026-10-11: the .local name did not resolve from Jamal's phone, so prefer the LAN
+    # address of the default interface (re-read at every snapshot, so a DHCP change
+    # heals itself within 30 min) and keep the Bonjour name as the fallback.
+    for iface in ("en0", "en1"):
+        try:
+            proc = subprocess.run(["ipconfig", "getifaddr", iface], capture_output=True, text=True, check=False)
+        except FileNotFoundError:  # macOS-only
+            break
+        ip = proc.stdout.strip()
+        if proc.returncode == 0 and ip:
+            return f"http://{ip}:8421"
     try:
         proc = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, check=False)
     except FileNotFoundError:  # scutil is macOS-only; CI runs on Linux

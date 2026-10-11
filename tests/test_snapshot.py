@@ -152,6 +152,20 @@ def test_render_sets_the_tutor_url_for_the_snapshot(monkeypatch):
     assert page.index("window.JAPANESE_TUTOR_UI_URL") < page.index("const JAPANESE_TUTOR_UI_URL")
 
 
+def test_tutor_url_prefers_the_lan_address_then_the_bonjour_name(monkeypatch):
+    monkeypatch.delenv("FLEET_DASHBOARD_TUTOR_URL", raising=False)
+    answers = {("ipconfig", "getifaddr", "en0"): (1, ""), ("ipconfig", "getifaddr", "en1"): (0, "192.168.86.21\n")}
+
+    def run(cmd, **k):
+        code, out = answers.get(tuple(cmd), (0, "Jamals-Mac-mini\n"))
+        return type("R", (), {"returncode": code, "stdout": out})()
+
+    monkeypatch.setattr(snapshot.subprocess, "run", run)
+    assert snapshot.tutor_ui_url() == "http://192.168.86.21:8421"
+    answers[("ipconfig", "getifaddr", "en1")] = (1, "")
+    assert snapshot.tutor_ui_url() == "http://Jamals-Mac-mini.local:8421"
+
+
 def test_tutor_url_falls_back_to_null_without_a_hostname(monkeypatch):
     monkeypatch.delenv("FLEET_DASHBOARD_TUTOR_URL", raising=False)
     monkeypatch.setattr(snapshot.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stdout": ""})())

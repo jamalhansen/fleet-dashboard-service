@@ -333,6 +333,10 @@ def test_japanese_tutor_endpoint_unreachable():
         "mastery": [],
         "reviews_today_attempts": 0,
         "reviews_today_distinct_cards": 0,
+        "review_days": [],
+        "current_streak": 0,
+        "longest_streak": 0,
+        "reviewed_today": False,
     }
 
 

@@ -619,6 +619,10 @@ class JapaneseTutorSummary:
     mastery: list[dict] = field(default_factory=list)
     reviews_today_attempts: int = 0
     reviews_today_distinct_cards: int = 0
+    review_days: list[dict] = field(default_factory=list)
+    current_streak: int = 0
+    longest_streak: int = 0
+    reviewed_today: bool = False
 
 
 def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> JapaneseTutorSummary:
@@ -644,6 +648,10 @@ def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> Japan
             due = client.get(f"{base_url}/api/cards/due/count").json()
             mastery = client.get(f"{base_url}/api/mastery").json()
             reviews_today = client.get(f"{base_url}/api/reviews/today").json()
+            try:  # an older tutor without the endpoint still gives the rest of the card
+                days = client.get(f"{base_url}/api/reviews/days").json()
+            except Exception:  # noqa: BLE001
+                days = {}
         return JapaneseTutorSummary(
             reachable=True,
             cards_due=due.get("due_count", 0),
@@ -652,6 +660,10 @@ def get_japanese_tutor_summary(base_url: str = "http://127.0.0.1:8421") -> Japan
             mastery=mastery,
             reviews_today_attempts=reviews_today.get("attempts", 0),
             reviews_today_distinct_cards=reviews_today.get("distinct_cards", 0),
+            review_days=days.get("days", []) if isinstance(days, dict) else [],
+            current_streak=days.get("current_streak", 0) if isinstance(days, dict) else 0,
+            longest_streak=days.get("longest_streak", 0) if isinstance(days, dict) else 0,
+            reviewed_today=bool(days.get("reviewed_today")) if isinstance(days, dict) else False,
         )
     except Exception:  # noqa: BLE001 - the server simply not running is expected, not an error to surface
         return JapaneseTutorSummary(reachable=False)

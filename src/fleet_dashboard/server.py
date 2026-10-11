@@ -285,6 +285,10 @@ def api_japanese_tutor():
         "mastery": j.mastery,
         "reviews_today_attempts": j.reviews_today_attempts,
         "reviews_today_distinct_cards": j.reviews_today_distinct_cards,
+        "review_days": j.review_days,
+        "current_streak": j.current_streak,
+        "longest_streak": j.longest_streak,
+        "reviewed_today": j.reviewed_today,
     }
 
 
